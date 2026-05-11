@@ -48,20 +48,15 @@
         .content { padding: 32px 24px; flex: 1; display: flex; flex-direction: column; }
 
         /* Stepper UI */
-        .stepper { display: flex; align-items: center; justify-content: space-between; margin-bottom: 40px; position: relative; }
+        .stepper { position: relative; height: 60px; margin: 16px auto 40px auto; width: 85%; }
         
-        /* The lines between dots */
-        .track-line { position: absolute; top: 12px; height: 4px; background: var(--border); z-index: 1; border-radius: 4px; }
-        .track-fill { position: absolute; top: 12px; height: 4px; background: var(--c-green); z-index: 2; border-radius: 4px; transition: width 1s ease-in-out; width: 0%; }
-        
-        /* Segments - Making the last one long */
-        .seg-1 { left: 12px; width: 20%; }
-        .seg-2 { left: calc(20% + 12px); width: 20%; }
-        .seg-3 { left: calc(40% + 12px); right: 12px; } /* The long transit stretch */
+        /* Single Continuous Track */
+        .track-bg { position: absolute; top: 10px; left: 0; width: 100%; height: 4px; background: var(--border); z-index: 1; border-radius: 4px; }
+        .track-fill { position: absolute; top: 10px; left: 0; width: 0%; height: 4px; background: var(--c-green); z-index: 2; border-radius: 4px; transition: width 1s ease-in-out; }
 
-        .step { display: flex; flex-direction: column; align-items: center; z-index: 3; position: relative; width: 24px; }
-        .step-dot { width: 24px; height: 24px; border-radius: 50%; background: var(--surface); border: 4px solid var(--border); transition: 0.3s; }
-        .step-label { position: absolute; top: 32px; font-size: 11px; font-weight: 700; color: var(--text-muted); white-space: nowrap; text-align: center; }
+        .step { position: absolute; top: 0; display: flex; flex-direction: column; align-items: center; z-index: 3; transform: translateX(-50%); width: 60px; }
+        .step-dot { width: 24px; height: 24px; border-radius: 50%; background: var(--surface); border: 4px solid var(--border); transition: 0.3s; margin-bottom: 8px;}
+        .step-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-align: center; line-height: 1.2;}
         
         /* Step States */
         .step.done .step-dot { background: var(--c-green); border-color: var(--c-green); }
@@ -69,12 +64,6 @@
         .step.active .step-label { color: var(--text-main); }
         
         @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(0, 209, 102, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(0, 209, 102, 0); } 100% { box-shadow: 0 0 0 0 rgba(0, 209, 102, 0); } }
-
-        /* Stepper Positions */
-        .step:nth-child(4) { position: absolute; left: 0; }
-        .step:nth-child(5) { position: absolute; left: 20%; }
-        .step:nth-child(6) { position: absolute; left: 40%; }
-        .step:nth-child(7) { position: absolute; right: 0; }
 
         /* Security OTP Box */
         .otp-card { background: #F0F4FF; border: 1px dashed #A5C0F9; border-radius: 20px; padding: 24px; text-align: center; margin-top: auto; }
@@ -110,21 +99,13 @@
         <div class="content">
             
             <div class="stepper">
-                <!-- Grey Background Tracks -->
-                <div class="track-line seg-1"></div>
-                <div class="track-line seg-2"></div>
-                <div class="track-line seg-3"></div>
+                <div class="track-bg"></div>
+                <div class="track-fill" id="track-fill"></div>
 
-                <!-- Green Fill Tracks -->
-                <div class="track-fill seg-1" id="fill-1"></div>
-                <div class="track-fill seg-2" id="fill-2"></div>
-                <div class="track-fill seg-3" id="fill-3"></div>
-
-                <!-- Step Nodes -->
-                <div class="step" id="step-1"><div class="step-dot"></div><div class="step-label">Billed</div></div>
-                <div class="step" id="step-2"><div class="step-dot"></div><div class="step-label">Packed</div></div>
-                <div class="step" id="step-3"><div class="step-dot"></div><div class="step-label">Picked Up</div></div>
-                <div class="step" id="step-4"><div class="step-dot"></div><div class="step-label">Delivered</div></div>
+                <div class="step" id="step-1" style="left: 0%;"><div class="step-dot"></div><div class="step-label">Billed</div></div>
+                <div class="step" id="step-2" style="left: 25%;"><div class="step-dot"></div><div class="step-label">Packed</div></div>
+                <div class="step" id="step-3" style="left: 50%;"><div class="step-dot"></div><div class="step-label">Picked Up</div></div>
+                <div class="step" id="step-4" style="left: 100%;"><div class="step-dot"></div><div class="step-label">Delivered</div></div>
             </div>
 
             <!-- OTP Card -->
@@ -153,20 +134,19 @@
 
         function updateUI(order) {
             document.getElementById('loader').style.display = 'none';
+            document.getElementById('app').style.display = 'flex';
             
             document.getElementById('ui-bag').innerText = `BAG #${order.bag_id}`;
             document.getElementById('ui-otp').innerText = order.otp;
 
-            // Calculate Expected ETA (45 minutes from creation)
             const createdTime = new Date(order.created_at).getTime();
             const etaTime = new Date(createdTime + (45 * 60000));
             document.getElementById('ui-eta').innerText = formatTime(etaTime);
 
             // Reset Steps & Fills
             for(let i=1; i<=4; i++) document.getElementById(`step-${i}`).className = 'step';
-            document.getElementById('fill-1').style.width = '0%';
-            document.getElementById('fill-2').style.width = '0%';
-            document.getElementById('fill-3').style.width = '0%';
+            const trackFill = document.getElementById('track-fill');
+            trackFill.style.width = '0%';
 
             const statusText = document.getElementById('ui-status');
 
@@ -185,27 +165,23 @@
                 statusText.innerText = "Packed & Waiting for Rider";
                 document.getElementById('step-1').className = 'step done';
                 document.getElementById('step-2').className = 'step active';
-                document.getElementById('fill-1').style.width = '100%';
+                trackFill.style.width = '25%';
             } 
             else if (order.status === 'TRANSIT') {
                 statusText.innerText = order.delivery_sequence === 1 ? "Rider is heading to you next!" : `Stop #${order.delivery_sequence} on Route`;
                 document.getElementById('step-1').className = 'step done';
                 document.getElementById('step-2').className = 'step done';
                 document.getElementById('step-3').className = 'step active';
-                document.getElementById('fill-1').style.width = '100%';
-                document.getElementById('fill-2').style.width = '100%';
-
-                // Calculate progress along the long final transit line
-                // Assume transit happens between minute 15 and minute 45
+                
+                // Progress algorithm: Starts at 50% (Picked up). Moves slowly towards 95% over the next 30 minutes.
                 const elapsedSinceTransitStart = Date.now() - (createdTime + (15 * 60000));
-                const totalTransitWindow = 30 * 60000;
-                let percent = (elapsedSinceTransitStart / totalTransitWindow) * 100;
+                const totalTransitWindow = 30 * 60000; 
+                let percent = 50 + ((elapsedSinceTransitStart / totalTransitWindow) * 45); // Maxes out at 95%
                 
-                // Clamp between 10% (just picked up) and 90% (almost there, waiting for OTP)
-                if(percent < 10) percent = 10;
-                if(percent > 90) percent = 90;
+                if(percent < 50) percent = 50;
+                if(percent > 95) percent = 95;
                 
-                document.getElementById('fill-3').style.width = `${percent}%`;
+                trackFill.style.width = `${percent}%`;
             } 
             else if (order.status === 'DELIVERED') {
                 statusText.innerText = "Successfully Delivered!";
@@ -217,9 +193,7 @@
                 document.getElementById('step-2').className = 'step done';
                 document.getElementById('step-3').className = 'step done';
                 document.getElementById('step-4').className = 'step done';
-                document.getElementById('fill-1').style.width = '100%';
-                document.getElementById('fill-2').style.width = '100%';
-                document.getElementById('fill-3').style.width = '100%';
+                trackFill.style.width = '100%';
             }
         }
 
