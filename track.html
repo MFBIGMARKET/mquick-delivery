@@ -133,8 +133,9 @@
         }
 
         function updateUI(order) {
-            document.getElementById('loader').style.display = 'none';
-            document.getElementById('app').style.display = 'flex';
+            // Hide loader safely
+            const loader = document.getElementById('loader');
+            if(loader) loader.style.display = 'none';
             
             document.getElementById('ui-bag').innerText = `BAG #${order.bag_id}`;
             document.getElementById('ui-otp').innerText = order.otp;
