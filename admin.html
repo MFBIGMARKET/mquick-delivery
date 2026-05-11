@@ -868,17 +868,29 @@
         async function removePhoto(id) { if(!supabaseClient) return; await supabaseClient.from('orders').update({ photo_url: null }).eq('id', id); fetchOrders(); }
 
         async function confirmBilling(id) {
-            if(!supabaseClient) return;
-            const amt = tempAmounts[id] || document.getElementById(`amt-${id}`).value; const order = db.find(o => o.id === id);
-            if(!amt || !order.photo_url) return alert("Amount and Photo required.");
-            await supabaseClient.from('orders').update({ status: 'BILLED', amount: parseFloat(amt) }).eq('id', id);
+            if(!supabaseClient) { showToast("System Offline", "error"); return; }
             
-            // Generate REAL tracking link
+            const amt = tempAmounts[id] || document.getElementById(`amt-${id}`).value; 
+            const order = db.find(o => o.id === id);
+            
+            if(!amt || !order.photo_url) { showToast("Bill Amount and Photo are required.", "error"); return; }
+
+            const { error } = await supabaseClient.from('orders').update({ status: 'BILLED', amount: parseFloat(amt) }).eq('id', id);
+            if(error) { showToast("Failed to process billing.", "error"); return; }
+            
+            // FIX: Correctly clean the phone number to prevent crashes (removes spaces, +, etc)
+            const safePhone = order.phone.replace(/\D/g, '');
+            
+            // Generate REAL tracking link dynamically using Vercel URL
             const trackUrl = `${window.location.origin}/track.html?id=${id}`;
-            const msg = `Dear ${order.customer_name},\n\nYour order is billed and being packed. \n*Total Amount:* ₹${amt}\n\n*Delivery Handover details:*\n• Delivery Bag ID: *${order.bag_id}*\n• Security OTP: *${order.otp}*\n\nTrack your delivery live here: ${trackUrl}`;
+            const msg = `Dear *${order.customer_name}*,\n\nYour order is billed and being packed.\n*Total Amount:* ₹${amt}\n\n*Delivery Handover details:*\n• Delivery Bag ID: *${order.bag_id}*\n• Security PIN: *${order.otp}*\n\nTrack your delivery live here:\n${trackUrl}`;
             
-            window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
-            delete tempAmounts[id]; fetchOrders();
+            // Open WhatsApp
+            window.open(`https://wa.me/${safePhone}?text=${encodeURIComponent(msg)}`, '_blank');
+            
+            delete tempAmounts[id]; 
+            showToast("Order Billed & Customer Notified!", "success");
+            fetchOrders();
         }
 
         async function verifyPacking(id) { if(!supabaseClient) return; await supabaseClient.from('orders').update({ status: 'TRANSIT' }).eq('id', id); fetchOrders(); }
