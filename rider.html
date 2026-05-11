@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MQuick | Rider Cockpit</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,500,1,0" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- PWA Setup -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0A59F7">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').catch(err => console.log('SW setup failed: ', err));
+            });
+        }
+    </script>
+
+    <style>
+        :root {
+            --bg-app: #F8FAFC; --surface: #FFFFFF; --border-color: #E2E8F0; --text-main: #0F172A; --text-muted: #64748B;
+            --c-blue: #2563EB; --c-green: #16A34A; --c-red: #DC2626;
+            --radius-card: 16px; --radius-pill: 999px;
+            --shadow-soft: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            --shadow-float: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { background-color: var(--bg-app); color: var(--text-main); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+        /* Header */
+        header { background: var(--surface); padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; z-index: 100; border-bottom: 1px solid var(--border-color); flex-shrink: 0; padding-top: max(16px, env(safe-area-inset-top)); }
+        .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 18px; color: var(--text-main); letter-spacing: -0.3px; }
+        .brand .material-symbols-rounded { color: var(--c-blue); font-size: 24px; }
+        .rider-status { display: flex; align-items: center; gap: 6px; background: #F0FDF4; color: var(--c-green); padding: 6px 12px; border-radius: var(--radius-pill); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .status-dot { width: 6px; height: 6px; background: var(--c-green); border-radius: 50%; box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.2); }
+        .rider-status.offline { background: #FEF2F2; color: var(--c-red); }
+        .rider-status.offline .status-dot { background: var(--c-red); box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2); }
+        body.nav-active header { display: none; }
+
+        /* Views */
+        .view { display: none; flex: 1; flex-direction: column; overflow: hidden; position: relative; }
+        .view.active { display: flex; animation: slideIn 0.3s ease-out; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Bottom Nav */
+        .bottom-nav { background: var(--surface); border-top: 1px solid var(--border-color); display: flex; justify-content: space-around; padding: 8px 16px; padding-bottom: max(8px, env(safe-area-inset-bottom)); position: sticky; bottom: 0; z-index: 100;}
+        .nav-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 24px; color: var(--text-muted); background: none; border: none; cursor: pointer; transition: 0.2s; border-radius: 12px;}
+        .nav-btn .material-symbols-rounded { font-size: 24px; }
+        .nav-btn span { font-size: 11px; font-weight: 600; }
+        .nav-btn.active { color: var(--c-blue); background: #EFF6FF; }
+        body.nav-active .bottom-nav { display: none; }
+
+        /* --- VIEW 1: QUEUE --- */
+        .queue-container { padding: 16px; overflow-y: auto; flex: 1; padding-bottom: 100px; }
+        .queue-header { margin-bottom: 16px; font-size: 16px; font-weight: 600; color: var(--text-main); display: flex; justify-content: space-between; align-items: center; }
+        .task-card { background: var(--surface); border-radius: var(--radius-card); padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow-soft); border: 1px solid var(--border-color); position: relative; overflow: hidden; transition: 0.2s; }
+        .task-card.priority { border-color: #BFDBFE; background: #FAFAFA; }
+        .task-card.urgent { border-color: #FECACA; background: #FEF2F2; }
+        .task-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+        .bag-badge { background: #EFF6FF; color: var(--c-blue); padding: 4px 10px; border-radius: 6px; font-size: 16px; font-weight: 600; letter-spacing: 0.5px; border: 1px solid #DBEAFE; }
+        .task-card.urgent .bag-badge { background: #FEF2F2; color: var(--c-red); border-color: #FECACA; }
+        .timer-badge { display: flex; align-items: center; gap: 4px; font-weight: 500; font-size: 12px; color: var(--text-muted); }
+        .timer-badge.urgent { color: var(--c-red); }
+        .task-customer { font-size: 15px; font-weight: 600; margin-bottom: 4px; color: var(--text-main); }
+        .task-address { font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; }
+        .btn-start { background: var(--c-blue); color: white; border: none; width: 100%; padding: 12px; border-radius: 12px; font-size: 14px; font-weight: 600; margin-top: 16px; display: flex; justify-content: center; align-items: center; gap: 8px; transition: 0.2s; }
+        .btn-start:active { background: #1D4ED8; }
+        .locked-overlay { position: absolute; inset: 0; background: rgba(255,255,255,0.9); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; flex-direction: column; color: var(--text-muted); font-weight: 500; font-size: 13px; z-index: 10; }
+        .empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+        .empty-state .material-symbols-rounded { font-size: 48px; color: #CBD5E1; margin-bottom: 12px; }
+
+        /* --- VIEW 2: NAV COCKPIT --- */
+        #v-nav { height: 100vh; width: 100vw; position: fixed; top: 0; left: 0; z-index: 900; background: var(--bg-app); display: none; flex-direction: column; }
+        #v-nav.active { display: flex; }
+        .map-placeholder { flex: 1; width: 100%; background: #E2E8F0; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1; }
+        .btn-back-map { position: absolute; top: max(16px, env(safe-area-inset-top)); left: 16px; z-index: 400; background: white; border: none; width: 40px; height: 40px; border-radius: 50%; box-shadow: var(--shadow-float); display: flex; align-items: center; justify-content: center; font-size: 20px; color: var(--text-main); cursor: pointer; border: 1px solid var(--border-color); }
+        .btn-huge-nav { background: var(--surface); color: var(--c-blue); border: 1px solid var(--border-color); padding: 16px 24px; border-radius: var(--radius-pill); font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 10px; box-shadow: var(--shadow-float); text-decoration: none; transition: 0.2s; z-index: 10; margin-top: -20px; }
+        .btn-huge-nav:active { transform: scale(0.97); }
+        .cockpit-bottom { background: var(--surface); border-radius: 24px 24px 0 0; padding: 20px; padding-bottom: max(20px, env(safe-area-inset-bottom)); box-shadow: 0 -4px 24px rgba(0,0,0,0.05); z-index: 10; position: relative; margin-top: -16px; border-top: 1px solid var(--border-color); }
+        .cockpit-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .c-bag { font-size: 20px; font-weight: 700; color: var(--text-main); line-height: 1; display: flex; align-items: center; gap: 8px;}
+        .c-bag span { background: #EFF6FF; color: var(--c-blue); padding: 4px 8px; border-radius: 6px; font-size: 18px; border: 1px solid #DBEAFE;}
+        .c-name { font-size: 13px; font-weight: 500; color: var(--text-muted); margin-top: 6px;}
+        .c-amt-container { text-align: right; }
+        .c-amt { font-size: 18px; font-weight: 600; color: var(--text-main); line-height: 1; }
+        .c-amt-label { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; letter-spacing: 0.5px;}
+        .action-row { display: flex; gap: 8px; margin-bottom: 20px; }
+        .action-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-decoration: none; background: #F8FAFC; border: 1px solid var(--border-color); padding: 12px 0; border-radius: 12px; font-size: 12px; font-weight: 500; color: var(--text-main); transition: 0.2s; }
+        .action-btn:active { background: #F1F5F9; }
+        .action-btn .material-symbols-rounded { font-size: 20px; color: var(--text-muted); }
+        .btn-arrive { background: var(--text-main); color: white; border: none; width: 100%; padding: 14px; border-radius: 12px; font-size: 15px; font-weight: 600; display: flex; justify-content: center; align-items: center; gap: 8px; box-shadow: var(--shadow-soft); transition: 0.2s;}
+        .btn-arrive:active { background: #1E293B; }
+
+        /* --- VIEW 3: SETTLEMENT DASHBOARD --- */
+        .settlement-container { padding: 20px; overflow-y: auto; flex: 1; padding-bottom: 100px; }
+        .settlement-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+        .settlement-header h2 { font-size: 18px; font-weight: 600; color: var(--text-main); }
+        
+        .date-picker-wrap { background: var(--surface); padding: 8px 16px; border-radius: var(--radius-pill); box-shadow: var(--shadow-soft); display: flex; align-items: center; gap: 8px; border: 1px solid var(--border-color); position: relative; cursor: pointer;}
+        .date-picker-wrap input[type="date"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+        
+        .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+        .metric-card { background: var(--surface); border-radius: 16px; padding: 20px; border: 1px solid var(--border-color); box-shadow: var(--shadow-soft); display: flex; flex-direction: column; gap: 8px; }
+        .metric-card.highlight { background: var(--c-blue); color: white; border: none; }
+        .metric-card.highlight .metric-title { color: #DBEAFE; }
+        .metric-card.highlight .metric-value { color: white; }
+        
+        .metric-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;}
+        .metric-value { font-size: 28px; font-weight: 700; color: var(--text-main); line-height: 1; }
+
+        /* BOTTOM SHEET (OTP) */
+        .backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(2px); z-index: 1000; display: none; opacity: 0; transition: 0.3s; }
+        .backdrop.active { display: block; opacity: 1; }
+        .bottom-sheet { position: fixed; bottom: -100%; left: 0; width: 100%; background: var(--surface); border-radius: 24px 24px 0 0; padding: 20px; padding-bottom: max(20px, env(safe-area-inset-bottom)); z-index: 1001; transition: bottom 0.3s ease-out; box-shadow: 0 -10px 40px rgba(0,0,0,0.1); display: flex; flex-direction: column; max-height: 92vh; overflow-y: auto; }
+        .bottom-sheet.active { bottom: 0; }
+        .sheet-handle { width: 36px; height: 4px; background: #E2E8F0; border-radius: 4px; margin: 0 auto 16px auto; flex-shrink: 0; }
+        .sheet-title { font-size: 18px; font-weight: 600; text-align: center; margin-bottom: 4px; color: var(--text-main); flex-shrink: 0; }
+        .sheet-subtitle { font-size: 13px; color: var(--text-muted); text-align: center; margin-bottom: 16px; font-weight: 400; flex-shrink: 0; }
+        .amount-highlight { background: #F8FAFC; border: 1px solid var(--border-color); text-align: center; padding: 12px; border-radius: 12px; font-size: 18px; font-weight: 600; margin-bottom: 16px; color: var(--text-main); display: flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0; }
+        .amount-highlight span { color: var(--text-muted); font-size: 14px; font-weight: 500; }
+        
+        .payment-row { display: flex; gap: 8px; margin-bottom: 16px; flex-shrink: 0; }
+        .payment-btn { flex: 1; padding: 12px 8px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--surface); color: var(--text-muted); font-weight: 500; font-size: 13px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+        .payment-btn.active { border-color: var(--c-green); background: #F0FDF4; color: var(--c-green); font-weight: 700; }
+        
+        .qr-container { display: none; text-align: center; margin-bottom: 16px; flex-shrink: 0; }
+        .qr-container.active { display: flex; flex-direction: column; align-items: center; }
+        .qr-container img { max-width: 120px; max-height: 120px; object-fit: contain; border-radius: 12px; box-shadow: var(--shadow-soft); border: 1px solid var(--border-color); }
+        
+        .split-inputs { display: none; gap: 8px; margin-bottom: 16px; flex-shrink: 0; width: 100%; }
+        .split-inputs.active { display: flex; }
+        
+        .split-inp { 
+            flex: 1; 
+            min-width: 0; /* Forces input to shrink perfectly inside flex container */
+            padding: 12px 8px; 
+            border: 1px solid var(--border-color); 
+            border-radius: 12px; 
+            font-size: 14px; 
+            text-align: center; 
+            font-weight: 600; 
+            outline: none; 
+            background: #F8FAFC; 
+            transition: 0.2s; 
+            -moz-appearance: textfield; /* Hides arrows in Firefox */
+        }
+        .split-inp:focus { border-color: var(--c-blue); background: #FFF; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
+        
+        /* Hides up/down arrows in Chrome, Safari, Edge, Opera */
+        .split-inp::-webkit-outer-spin-button,
+        .split-inp::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        
+        .otp-input { width: 100%; text-align: center; font-size: 24px; font-weight: 600; letter-spacing: 12px; padding: 12px; border: 1px solid var(--border-color); border-radius: 12px; background: #FFFFFF; outline: none; color: var(--text-main); margin-bottom: 16px; transition: 0.2s; flex-shrink: 0;}
+        .otp-input:focus { border-color: var(--c-blue); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
+        
+        .btn-verify { background: var(--c-green); color: white; border: none; width: 100%; padding: 14px; border-radius: 12px; font-size: 15px; font-weight: 600; margin-bottom: 12px; opacity: 0.5; pointer-events: none; transition: 0.3s; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.2); flex-shrink: 0; }
+        .btn-verify.enabled { opacity: 1; pointer-events: auto; }
+        .divider { height: 1px; background: var(--border-color); margin: 16px 0; position: relative; }
+        .divider::after { content: "OR"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--surface); padding: 0 10px; font-size: 11px; font-weight: 500; color: var(--text-muted); }
+        .btn-issue { background: white; color: var(--c-red); border: 1px solid #FECACA; width: 100%; padding: 12px; border-radius: 12px; font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .issue-options { display: none; flex-direction: column; gap: 8px; margin-top: 12px; }
+        .issue-options.active { display: flex; }
+        .btn-reason { background: #F8FAFC; border: 1px solid var(--border-color); padding: 12px; border-radius: 10px; font-size: 13px; font-weight: 500; color: var(--text-main); text-align: left; }
+
+        /* Auth Screen */
+        #auth-screen { position: fixed; inset: 0; background: var(--bg-app); z-index: 99999; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+        .auth-card { background: white; padding: 32px; border-radius: 24px; box-shadow: var(--shadow-soft); width: 90%; max-width: 360px; text-align: center; border: 1px solid var(--border-color); }
+        .auth-input { width: 100%; padding: 14px; margin-bottom: 16px; border: 1px solid var(--border-color); border-radius: 12px; font-size: 14px; outline: none; background: #F8FAFC; transition: 0.2s; }
+        .auth-input:focus { border-color: var(--c-blue); background: white; }
+        /* Custom Toast & Confirm Modal */
+        #toast-container { position: fixed; top: max(20px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 999999; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+        .toast { background: var(--surface); color: var(--text-main); padding: 14px 24px; border-radius: var(--radius-pill); box-shadow: 0 10px 40px rgba(0,0,0,0.15); font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 10px; animation: toastIn 0.3s forwards; border: 1px solid var(--border-color); }
+        .toast.success { border-left: 4px solid var(--c-green); }
+        .toast.error { border-left: 4px solid var(--c-red); }
+        @keyframes toastIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(5px); z-index: 100000; display: none; align-items: center; justify-content: center; }
+        .modal-box { background: white; padding: 24px; border-radius: 20px; width: 90%; max-width: 320px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+    </style>
+</head>
+<body>
+
+    <!-- LOGIN SCREEN -->
+    <div id="auth-screen">
+        <div class="auth-card">
+            <span class="material-symbols-rounded" style="font-size: 48px; color: var(--c-blue); margin-bottom: 16px;">two_wheeler</span>
+            <h2 style="font-size: 22px; font-weight: 800; margin-bottom: 8px;">Rider Cockpit</h2>
+            <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 32px;">Sign in to start deliveries</p>
+            
+            <input type="email" id="auth-email" class="auth-input" placeholder="Email Address">
+            <input type="password" id="auth-pass" class="auth-input" placeholder="Password" style="margin-bottom: 24px;">
+            
+            <button class="btn-start" style="margin-top: 0;" onclick="login()">Log In</button>
+        </div>
+    </div>
+
+    <header>
+        <div class="brand"><span class="material-symbols-rounded">bolt</span>MQuick Rider</div>
+        <div style="display:flex; align-items:center; gap:8px;">
+            <div class="rider-status" id="conn-status"><div class="status-dot"></div> Online</div>
+            <button style="background:none; border:none; color:var(--text-muted); display:flex; padding:4px;" onclick="logout()"><span class="material-symbols-rounded">logout</span></button>
+        </div>
+    </header>
+
+    <!-- VIEW 1: QUEUE -->
+    <div id="v-queue" class="view active">
+        <div class="queue-container">
+            <div class="queue-header">
+                <span>My Tasks</span>
+                <span id="task-count" style="color: var(--text-muted); font-size: 14px; font-weight: 500;">0 bags</span>
+            </div>
+            <div id="queue-list"></div>
+        </div>
+    </div>
+
+    <!-- VIEW 2: NAVIGATION COCKPIT -->
+    <div id="v-nav" class="view">
+        <button class="btn-back-map" onclick="endSession()"><span class="material-symbols-rounded">arrow_back</span></button>
+        <div class="map-placeholder">
+            <a href="#" id="gm-link" class="btn-huge-nav">
+                <span class="material-symbols-rounded">directions</span> Open Navigation
+            </a>
+            <div style="margin-top: 12px; font-weight: 500; font-size: 13px; color: var(--text-muted);">Uses Google Maps</div>
+        </div>
+        <div class="cockpit-bottom">
+            <div class="cockpit-header">
+                <div>
+                    <div class="c-bag">Bag <span>8A2B</span></div>
+                    <div class="c-name" id="nav-name">Customer Name</div>
+                </div>
+                <div class="c-amt-container">
+                    <div class="c-amt-label">To Collect</div>
+                    <div class="c-amt" id="nav-amt">₹0</div>
+                </div>
+            </div>
+            <div class="action-row" id="nav-actions"></div>
+            <button class="btn-arrive" onclick="openHandover()">
+                Arrived at Location
+            </button>
+        </div>
+    </div>
+
+    <!-- VIEW 3: SETTLEMENT DASHBOARD -->
+    <div id="v-settle" class="view">
+        <div class="settlement-container">
+            <div class="settlement-header">
+                <div>
+                    <h2>My EOD Settlement</h2>
+                    <div id="day-settled-badge" style="display:none; align-items:center; gap:4px; color:var(--c-green); font-size:12px; font-weight:700; margin-top:6px;"><span class="material-symbols-rounded" style="font-size:16px;">verified</span> Accounts Settled</div>
+                </div>
+                <div class="date-picker-wrap">
+                    <span class="material-symbols-rounded" style="color: var(--text-muted); font-size: 18px;">calendar_today</span>
+                    <span id="date-display" style="font-weight: 600; color: var(--c-blue); font-size: 13px;">Today</span>
+                    <input type="date" id="settle-date" onchange="changeDate()">
+                </div>
+            </div>
+
+            <div class="metrics-grid">
+                <div class="metric-card highlight">
+                    <div class="metric-title"><span class="material-symbols-rounded" style="font-size: 16px;">payments</span> Cash to Remit</div>
+                    <div class="metric-value" id="m-cash">₹0</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-title"><span class="material-symbols-rounded" style="font-size: 16px;">qr_code_scanner</span> UPI Received</div>
+                    <div class="metric-value" id="m-upi">₹0</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-title"><span class="material-symbols-rounded" style="font-size: 16px;">check_circle</span> Successful</div>
+                    <div class="metric-value" id="m-success">0 Orders</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-title" style="color: var(--c-red);"><span class="material-symbols-rounded" style="font-size: 16px;">assignment_return</span> Returned</div>
+                    <div class="metric-value" style="color: var(--c-red);" id="m-return">0 Orders</div>
+                </div>
+            </div>
+            
+            <h3 style="font-size:15px; margin-bottom:12px; color:var(--text-main);">Transaction Breakdown</h3>
+            <div id="rider-settle-list" style="display: flex; flex-direction: column; gap: 12px;"></div>
+            
+        </div>
+    </div>
+
+    <!-- BOTTOM NAVIGATION -->
+    <div class="bottom-nav">
+        <button class="nav-btn active" onclick="switchTab('v-queue', this)">
+            <span class="material-symbols-rounded">view_list</span>
+            <span>My Tasks</span>
+        </button>
+        <button class="nav-btn" onclick="switchTab('v-settle', this)">
+            <span class="material-symbols-rounded">account_balance_wallet</span>
+            <span>Settlement</span>
+        </button>
+    </div>
+
+    <!-- UI TOOLKIT -->
+    <div id="toast-container"></div>
+    <div class="modal-overlay" id="confirm-modal">
+        <div class="modal-box">
+            <div id="confirm-icon" class="material-symbols-rounded" style="font-size: 48px; margin-bottom: 16px;">help</div>
+            <div style="font-size: 18px; font-weight: 800; margin-bottom: 8px;" id="confirm-title">Confirm</div>
+            <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 24px;" id="confirm-msg">Are you sure?</p>
+            <div style="display:flex; gap:12px;">
+                <button style="flex:1; padding:12px; border-radius:12px; border:none; background:#F1F5F9; font-weight:600;" onclick="closeConfirm()">Cancel</button>
+                <button id="confirm-btn-yes" style="flex:1; padding:12px; border-radius:12px; border:none; color:white; font-weight:600;">Yes</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- BOTTOM SHEET: HANDOVER -->
+    <div class="backdrop" id="backdrop" onclick="closeHandover()"></div>
+    <div class="bottom-sheet" id="sheet-handover">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title">Complete Delivery</div>
+        <div class="sheet-subtitle">Confirm payment and enter customer PIN.</div>
+
+        <div class="amount-highlight" id="handover-amt"><span>Collect:</span> ₹0</div>
+
+        <div class="payment-row">
+            <button class="payment-btn" id="pay-cash" onclick="setPayment('CASH')"><span class="material-symbols-rounded" style="font-size: 18px;">payments</span> Cash</button>
+            <button class="payment-btn" id="pay-upi" onclick="setPayment('UPI')"><span class="material-symbols-rounded" style="font-size: 18px;">qr_code_scanner</span> UPI</button>
+            <button class="payment-btn" id="pay-split" onclick="setPayment('SPLIT')"><span class="material-symbols-rounded" style="font-size: 18px;">call_split</span> Split</button>
+        </div>
+        
+        <div class="qr-container" id="dynamic-qr">
+            <img src="" id="store-qr-img" alt="Store QR Code">
+            <div style="font-size:11px; color:var(--text-muted); margin-top:6px; font-weight:600;">Scan to Pay</div>
+        </div>
+
+        <div class="split-inputs" id="split-container">
+            <input type="number" id="split-cash" class="split-inp" placeholder="Cash ₹" oninput="checkInputs()">
+            <input type="number" id="split-upi" class="split-inp" placeholder="UPI ₹" oninput="checkInputs()">
+        </div>
+
+        <input type="tel" id="otp-input" class="otp-input" maxlength="4" placeholder="••••" autocomplete="off" oninput="checkInputs()">
+        
+        <button class="btn-verify" id="btn-verify" onclick="verifyOTP()">Verify & Complete</button>
+
+        <div class="divider"></div>
+
+        <button class="btn-issue" id="btn-show-issues" onclick="toggleIssues()">
+            Report Issue
+        </button>
+
+        <div class="issue-options" id="issue-options">
+            <button class="btn-reason" onclick="failDelivery('Customer Unreachable')">Customer Unreachable</button>
+            <button class="btn-reason" onclick="failDelivery('Customer Refused Order')">Customer Refused Order</button>
+            <button class="btn-reason" onclick="failDelivery('Wrong Location')">Wrong Location Pinned</button>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. SUPABASE CLOUD SETUP ---
+        // ⚠️ REPLACE THESE STRINGS WITH YOUR ACTUAL KEYS ⚠️
+        const SUPABASE_URL = 'https://smuzvvmslrpgrgluisxt.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNtdXp2dm1zbHJwZ3JnbHVpc3h0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3OTIwODAsImV4cCI6MjA5MTM2ODA4MH0.TS9aMtc24O8GASSC1XSsufPBq7TVQhhsMnGsh685T4g';
+        
+        let supabaseClient = null;
+        if (SUPABASE_URL.startsWith('http')) { supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
+
+        let db = [];
+        let config = JSON.parse(localStorage.getItem('app_config')) || { lat: 11.990319, lng: 75.675524 }; 
+        let activeSessionId = localStorage.getItem('rider_active_session') || null;
+        let activeOrder = null;
+        let selectedPayment = null;
+        let activeDate = getYYYYMMDD(Date.now());
+        
+        document.getElementById('settle-date').value = activeDate;
+
+        function showToast(msg, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const icon = type === 'success' ? 'check_circle' : 'error';
+            const color = type === 'success' ? 'var(--c-green)' : 'var(--c-red)';
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<span class="material-symbols-rounded" style="color:${color}">${icon}</span> ${msg}`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.style.opacity = '0'; toast.style.transform = 'translateY(-20px)'; toast.style.transition = '0.3s'; setTimeout(() => toast.remove(), 300); }, 3000);
+        }
+
+        let confirmCallback = null;
+        function showConfirm(title, msg, icon, color, callback) {
+            document.getElementById('confirm-title').innerText = title;
+            document.getElementById('confirm-msg').innerText = msg;
+            document.getElementById('confirm-icon').innerText = icon;
+            document.getElementById('confirm-icon').style.color = `var(--c-${color})`;
+            document.getElementById('confirm-btn-yes').style.background = `var(--c-${color})`;
+            confirmCallback = callback;
+            document.getElementById('confirm-modal').style.display = 'flex';
+        }
+        function closeConfirm() { document.getElementById('confirm-modal').style.display = 'none'; confirmCallback = null; }
+        document.getElementById('confirm-btn-yes').addEventListener('click', () => { if(confirmCallback) confirmCallback(); closeConfirm(); });
+
+        function updateConnectionStatus(isOnline) {
+            const status = document.getElementById('conn-status');
+            if(isOnline) {
+                status.classList.remove('offline');
+                status.innerHTML = `<div class="status-dot"></div> Online`;
+            } else {
+                status.classList.add('offline');
+                status.innerHTML = `<div class="status-dot"></div> Offline`;
+            }
+        }
+
+        // --- NAVIGATION ---
+        function switchTab(viewId, element) {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.querySelectorAll('.nav-btn').forEach(n => n.classList.remove('active'));
+            document.getElementById(viewId).classList.add('active');
+            element.classList.add('active');
+            renderUI();
+        }
+
+        // --- DATE UTILS ---
+        function getYYYYMMDD(timestamp) { const d = new Date(timestamp); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+        function formatDDMMYYYY(yyyy_mm_dd) { if(!yyyy_mm_dd) return ''; const parts = yyyy_mm_dd.split('-'); if(parts.length !== 3) return yyyy_mm_dd; return `${parts[2]}-${parts[1]}-${parts[0]}`; }
+
+        function changeDate() {
+            activeDate = document.getElementById('settle-date').value;
+            document.getElementById('date-display').innerText = formatDDMMYYYY(activeDate);
+            renderUI();
+        }
+
+        
+        
+        let globalQrUrl = null;
+        let settingsFetched = false;
+        let currentUser = null;
+
+        // --- GPS STREAMING ---
+        let gpsWatcher = null;
+        function startGPS() {
+            if(navigator.geolocation && currentUser) {
+                gpsWatcher = navigator.geolocation.watchPosition(async (pos) => {
+                    await supabaseClient.from('profiles').update({
+                        current_lat: pos.coords.latitude, 
+                        current_lng: pos.coords.longitude, 
+                        last_active: new Date().toISOString()
+                    }).eq('id', currentUser.id);
+                }, (err) => console.warn(err), { enableHighAccuracy: true, maximumAge: 10000 });
+            }
+        }
+
+        // --- SEQUENCE SYNCING ---
+        async function syncSequenceToDB(routeArray) {
+            let updates = [];
+            routeArray.forEach((t, index) => {
+                const seq = index + 1;
+                if(t.delivery_sequence !== seq) updates.push({ id: t.id, delivery_sequence: seq });
+            });
+            if(updates.length > 0) {
+                // Bulk update the sequence numbers so Admin/Customer can see them
+                for(let u of updates) await supabaseClient.from('orders').update({delivery_sequence: u.delivery_sequence}).eq('id', u.id);
+            }
+        }
+
+        async function checkAuth() {
+            if(!supabaseClient) return;
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if(session) {
+                currentUser = session.user;
+                if(currentUser.user_metadata.role !== 'RIDER' && currentUser.user_metadata.role !== 'ADMIN') {
+                    alert("Unauthorized. Rider access only."); logout(); return;
+                }
+                document.getElementById('auth-screen').style.display = 'none';
+                initApp();
+                startGPS(); // Start streaming location!
+            } else {
+                document.getElementById('auth-screen').style.display = 'flex';
+            }
+        }
+
+        async function login() {
+            const email = document.getElementById('auth-email').value.trim();
+            const pass = document.getElementById('auth-pass').value;
+            const { error } = await supabaseClient.auth.signInWithPassword({ email, password: pass });
+            if(error) alert(error.message); else checkAuth();
+        }
+
+        
+
+        async function fetchSettings() {
+            if(!supabaseClient || settingsFetched) return;
+            try {
+                const { data } = await supabaseClient.from('app_settings').select('upi_qr_url').eq('id', 1).single();
+                if(data && data.upi_qr_url) globalQrUrl = data.upi_qr_url;
+                settingsFetched = true; 
+            } catch(err) { settingsFetched = true; }
+        }
+
+        async function fetchOrders() {
+            if(!supabaseClient) { updateConnectionStatus(false); return; }
+            
+            try {
+                const { data, error } = await supabaseClient
+                    .from('orders')
+                    .select('*')
+                    .order('created_at', { ascending: true }); 
+                
+                if(error) throw error;
+                db = data;
+                updateConnectionStatus(true);
+                localStorage.setItem('rider_cache', JSON.stringify(db));
+            } catch(e) {
+                console.error(e);
+                updateConnectionStatus(false);
+                db = JSON.parse(localStorage.getItem('rider_cache')) || [];
+            }
+            
+            renderUI(); // FIX: Just render the UI, do NOT call initApp() here!
+        }
+
+        async function initApp() {
+            await fetchSettings();
+            await fetchOrders(); // Wait for data to load first
+            
+            // FIX: Only create the 5-second refresh loop ONCE
+            if (!window.syncInterval) {
+                window.syncInterval = setInterval(fetchOrders, 5000);
+            }
+
+            if(activeSessionId) {
+                activeOrder = db.find(o => o.id === activeSessionId) || activeOrder; 
+                if(activeOrder && activeOrder.status === 'TRANSIT') {
+                    showNavView();
+                    return;
+                } else {
+                    endSession();
+                }
+            }
+            renderUI();
+        }
+
+        function getDistanceKm(lat1, lon1, lat2, lon2) {
+            if(!lat1 || !lon1 || !lat2 || !lon2) return 999;
+            const R = 6371; const dLat = (lat2 - lat1) * Math.PI / 180; const dLon = (lon2 - lon1) * Math.PI / 180; const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2); return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        function renderUI() {
+            renderQueue();
+            renderSettlement();
+        }
+
+        function renderQueue() {
+            if(document.activeElement.id === 'otp-input') return;
+            const queueList = document.getElementById('queue-list');
+            
+            let tasks = db.filter(o => o.status === 'TRANSIT');
+            document.getElementById('task-count').innerText = `${tasks.length} bags`;
+
+            if(tasks.length === 0) {
+                queueList.innerHTML = `<div class="empty-state"><span class="material-symbols-rounded" style="font-size:48px; color:#CBD5E1;">local_cafe</span><br><b style="font-size:16px; color:var(--text-main)">Take a break!</b><p style="margin-top:4px; font-size:13px">Waiting for next assignment...</p></div>`;
+                return;
+            }
+
+            // PROFESSIONAL SEQUENTIAL ROUTING (Greedy Algorithm)
+            // Starts at the Hub, finds the closest/urgent order, then calculates next step from THERE.
+            let pool = [...tasks];
+            let route = [];
+            let currentLoc = { lat: config.lat, lng: config.lng }; // Start at Hub
+
+            while(pool.length > 0) {
+                pool.forEach(t => { 
+                    const passed = Math.floor((Date.now() - new Date(t.created_at).getTime()) / 60000);
+                    t.remaining = 60 - passed; 
+                    t.dist = getDistanceKm(currentLoc.lat, currentLoc.lng, t.lat, t.lng);
+                });
+
+                pool.sort((a,b) => {
+                    if (a.remaining <= 15 && b.remaining > 15) return -1; // Urgent first
+                    if (b.remaining <= 15 && a.remaining > 15) return 1;
+                    return a.dist - b.dist; // Otherwise closest to CURRENT point
+                });
+
+                let nextStop = pool.shift(); 
+                route.push(nextStop);
+                // Move virtual location to this dropoff point for the next loop
+                if(nextStop.lat && nextStop.lng) {
+                    currentLoc = { lat: nextStop.lat, lng: nextStop.lng }; 
+                }
+            }
+            
+            tasks = route; // Apply optimized route
+            
+            // Sync the optimized sequence to the cloud quietly in the background
+            syncSequenceToDB(tasks);
+
+            let html = '';
+            tasks.forEach((t, index) => {
+                const isTopPriority = index === 0;
+                const isUrgent = t.remaining <= 15;
+                
+                let cardClass = 'task-card';
+                if(isTopPriority) cardClass += ' priority';
+                if(isUrgent && isTopPriority) cardClass += ' urgent';
+
+                let lockedHtml = !isTopPriority ? `<div class="locked-overlay"><span class="material-symbols-rounded" style="font-size:24px;margin-bottom:4px">lock</span>Deliver previous bag first</div>` : '';
+                let btnHtml = isTopPriority ? `<button class="btn-start" onclick="startSession('${t.id}')">Start Delivery</button>` : '';
+                
+                let timeStr = t.remaining >= 0 ? `${t.remaining}m left` : `${Math.abs(t.remaining)}m late`;
+
+                html += `
+                <div class="${cardClass}">
+                    ${lockedHtml}
+                    <div class="task-top">
+                        <div class="bag-badge">${t.bag_id}</div>
+                        <div class="timer-badge ${isUrgent ? 'urgent' : ''}"><span class="material-symbols-rounded" style="font-size:14px">schedule</span> ${timeStr}</div>
+                    </div>
+                    <div class="task-customer">${t.customer_name}</div>
+                    <div class="task-address"><span class="material-symbols-rounded" style="font-size:16px;">payments</span> Collect: ₹${t.amount || '0'}</div>
+                    ${btnHtml}
+                </div>`;
+            });
+            queueList.innerHTML = html;
+        }
+
+        function renderSettlement() {
+            let totalCash = 0;
+            let totalUpi = 0;
+            let countSuccess = 0;
+            let countReturn = 0;
+
+            const filteredDB = db.filter(o => getYYYYMMDD(new Date(o.created_at)) === activeDate && (o.status === 'DELIVERED' || o.status === 'RETURNED'));
+
+            filteredDB.forEach(o => {
+                if(o.status === 'DELIVERED') {
+                    countSuccess++;
+                    totalCash += parseFloat(o.amount_cash || 0);
+                    totalUpi += parseFloat(o.amount_upi || 0);
+                } else {
+                    countReturn++;
+                }
+            });
+
+            // Settlement Verification Indicator
+            if(filteredDB.length > 0 && filteredDB.every(o => o.is_settled)) {
+                document.getElementById('day-settled-badge').style.display = 'flex';
+                document.getElementById('m-cash').parentElement.classList.remove('highlight');
+                document.getElementById('m-cash').parentElement.style.background = '#F0FDF4';
+                document.getElementById('m-cash').parentElement.style.border = '1px solid #BBF7D0';
+                document.getElementById('m-cash').style.color = 'var(--c-green)';
+                document.getElementById('m-cash').previousElementSibling.style.color = 'var(--c-green)';
+            } else {
+                document.getElementById('day-settled-badge').style.display = 'none';
+                document.getElementById('m-cash').parentElement.classList.add('highlight');
+                document.getElementById('m-cash').parentElement.style.background = '';
+                document.getElementById('m-cash').parentElement.style.border = '';
+                document.getElementById('m-cash').style.color = '';
+                document.getElementById('m-cash').previousElementSibling.style.color = '';
+            }
+
+            document.getElementById('m-cash').innerText = `₹${totalCash}`;
+            document.getElementById('m-upi').innerText = `₹${totalUpi}`;
+            document.getElementById('m-success').innerText = `${countSuccess} Orders`;
+            document.getElementById('m-return').innerText = `${countReturn} Orders`;
+
+            // NEW: Build the itemized list for the Rider
+            let listHTML = '';
+            if(filteredDB.length === 0) {
+                listHTML = `<div class="empty-state" style="padding:40px 20px;"><span class="material-symbols-rounded">receipt_long</span><p>No transactions found for this date.</p></div>`;
+            } else {
+                filteredDB.sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).forEach(o => {
+                    let cAmt = parseFloat(o.amount_cash || 0);
+                    let uAmt = parseFloat(o.amount_upi || 0);
+                    let statusColor = o.status === 'DELIVERED' ? 'var(--c-green)' : 'var(--c-red)';
+                    let sBadge = o.is_settled ? `<span style="color:var(--c-green); font-size:16px; vertical-align:middle;" class="material-symbols-rounded" title="Settled">task_alt</span>` : '';
+                    let methodStr = o.status === 'DELIVERED' ? o.payment_method : `Reason: ${o.return_reason || 'N/A'}`;
+                    
+                    let amountUI = o.status === 'DELIVERED' ? 
+                        `<div style="text-align:right;">
+                            <div style="font-weight:800; font-size:15px; color:var(--text-main);">₹${o.amount || '0'}</div>
+                            <div style="font-size:11px; font-weight:700; color:var(--text-muted); margin-top:6px;">CASH: <span style="color:var(--text-main)">₹${cAmt}</span><br>UPI: <span style="color:var(--text-main)">₹${uAmt}</span></div>
+                        </div>` : 
+                        `<div style="font-weight:800; font-size:15px; color:var(--c-red); text-align:right;">Failed</div>`;
+
+                    listHTML += `
+                    <div style="background:var(--surface); border:1px solid var(--border-color); padding:16px; border-radius:16px; display:flex; justify-content:space-between; align-items:center; box-shadow:var(--shadow-soft);">
+                        <div>
+                            <div style="font-weight:700; font-size:14px; color:var(--text-main); margin-bottom:4px; display:flex; align-items:center; gap:6px;">Bag: ${o.bag_id} ${sBadge}</div>
+                            <div style="font-size:12px; color:var(--text-muted);">${o.customer_name}</div>
+                            <div style="font-size:11px; font-weight:600; color:${statusColor}; margin-top:8px; background:#F8FAFC; display:inline-block; padding:4px 8px; border-radius:6px;">${methodStr}</div>
+                        </div>
+                        ${amountUI}
+                    </div>`;
+                });
+            }
+            document.getElementById('rider-settle-list').innerHTML = listHTML;
+        }
+
+        function logout() { 
+            showConfirm("Sign Out", "End your current riding shift?", "logout", "red", async () => {
+                await supabaseClient.auth.signOut(); window.location.reload(); 
+            }); 
+        }
+
+        async function startSession(id) {
+            const { error } = await supabaseClient.from('orders').update({ rider_id: currentUser.id }).eq('id', id).is('rider_id', null); 
+            if(error) { showToast("Another rider claimed this!", "error"); fetchOrders(); return; }
+
+            activeSessionId = id; localStorage.setItem('rider_active_session', id); activeOrder = db.find(o => o.id === id); showNavView();
+        }
+
+        function endSession() {
+            activeSessionId = null; activeOrder = null; selectedPayment = null;
+            localStorage.removeItem('rider_active_session');
+            document.body.classList.remove('nav-active');
+            document.getElementById('v-nav').classList.remove('active');
+            document.getElementById('v-queue').classList.add('active');
+            fetchOrders(); 
+        }
+
+        function showNavView() {
+            document.body.classList.add('nav-active');
+            document.getElementById('v-queue').classList.remove('active');
+            document.getElementById('v-nav').classList.add('active');
+
+            document.querySelector('#v-nav .c-bag span').innerText = activeOrder.bag_id;
+            document.getElementById('nav-name').innerText = activeOrder.customer_name;
+            document.getElementById('nav-amt').innerText = `₹${activeOrder.amount || '0'}`;
+
+            let mapsUrl = "https://maps.google.com";
+            if(activeOrder.lat && activeOrder.lng) { mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${activeOrder.lat},${activeOrder.lng}`; }
+            document.getElementById('gm-link').href = mapsUrl;
+
+            const waMsg = `Hi ${activeOrder.customer_name}, I am your MQuick Rider. I am arriving shortly with Bag ${activeOrder.bag_id}.`;
+            let actionsHtml = `<a href="tel:${activeOrder.phone}" class="action-btn"><span class="material-symbols-rounded">call</span>Call</a>`;
+            if(activeOrder.alt_phone) { actionsHtml += `<a href="tel:${activeOrder.alt_phone}" class="action-btn"><span class="material-symbols-rounded">phone_in_talk</span>Alt</a>`; }
+            actionsHtml += `<a href="https://wa.me/${activeOrder.phone}?text=${encodeURIComponent(waMsg)}" target="_blank" class="action-btn"><span class="material-symbols-rounded" style="color:#16A34A">chat</span>WhatsApp</a>`;
+            
+            document.getElementById('nav-actions').innerHTML = actionsHtml;
+        }
+
+        // --- HANDOVER & PAYMENT ---
+        function openHandover() {
+            document.getElementById('backdrop').classList.add('active');
+            document.getElementById('sheet-handover').classList.add('active');
+            document.getElementById('otp-input').value = '';
+            document.getElementById('split-cash').value = '';
+            document.getElementById('split-upi').value = '';
+            document.getElementById('handover-amt').innerHTML = `<span>Collect:</span> ₹${activeOrder.amount || '0'}`;
+            
+            selectedPayment = null;
+            document.getElementById('pay-cash').classList.remove('active');
+            document.getElementById('pay-upi').classList.remove('active');
+            document.getElementById('pay-split').classList.remove('active');
+            document.getElementById('split-container').classList.remove('active');
+            document.getElementById('dynamic-qr').classList.remove('active');
+            
+            if(globalQrUrl) document.getElementById('store-qr-img').src = globalQrUrl;
+
+            checkInputs();
+            document.getElementById('issue-options').classList.remove('active');
+            document.getElementById('btn-show-issues').style.display = 'flex';
+        }
+
+        function closeHandover() { document.getElementById('backdrop').classList.remove('active'); document.getElementById('sheet-handover').classList.remove('active'); document.getElementById('otp-input').blur(); }
+        function toggleIssues() { document.getElementById('issue-options').classList.add('active'); document.getElementById('btn-show-issues').style.display = 'none'; }
+
+        function setPayment(method) {
+            selectedPayment = method;
+            document.getElementById('pay-cash').classList.toggle('active', method === 'CASH');
+            document.getElementById('pay-upi').classList.toggle('active', method === 'UPI');
+            document.getElementById('pay-split').classList.toggle('active', method === 'SPLIT');
+            
+            document.getElementById('split-container').classList.toggle('active', method === 'SPLIT');
+            
+            // Show QR if UPI or SPLIT is selected, AND a QR exists
+            if ((method === 'UPI' || method === 'SPLIT') && globalQrUrl) {
+                document.getElementById('dynamic-qr').classList.add('active');
+            } else {
+                document.getElementById('dynamic-qr').classList.remove('active');
+            }
+            checkInputs();
+        }
+
+        function checkInputs() {
+            const otp = document.getElementById('otp-input').value;
+            const btn = document.getElementById('btn-verify');
+            
+            let amountValid = true;
+            if(selectedPayment === 'SPLIT') {
+                const csh = parseFloat(document.getElementById('split-cash').value) || 0;
+                const upi = parseFloat(document.getElementById('split-upi').value) || 0;
+                if(csh + upi !== parseFloat(activeOrder.amount)) amountValid = false;
+            }
+
+            if(otp.length === 4 && selectedPayment !== null && amountValid) { btn.classList.add('enabled'); } 
+            else { btn.classList.remove('enabled'); }
+        }
+
+        // Auto-Routes to next delivery from the dropoff location
+        async function proceedToNextOrEnd(lastOrder) {
+            await fetchOrders(); // Get fresh queue
+            let nextTasks = db.filter(o => o.status === 'TRANSIT');
+            
+            if(nextTasks.length > 0) {
+                // Calculate next step from the location we just finished at
+                let currentLoc = (lastOrder && lastOrder.lat && lastOrder.lng) ? { lat: lastOrder.lat, lng: lastOrder.lng } : { lat: config.lat, lng: config.lng };
+                
+                nextTasks.forEach(t => { 
+                    const passed = Math.floor((Date.now() - new Date(t.created_at).getTime()) / 60000);
+                    t.remaining = 60 - passed; 
+                    t.dist = getDistanceKm(currentLoc.lat, currentLoc.lng, t.lat, t.lng);
+                });
+                
+                nextTasks.sort((a,b) => {
+                    if (a.remaining <= 15 && b.remaining > 15) return -1;
+                    if (b.remaining <= 15 && a.remaining > 15) return 1;
+                    return a.dist - b.dist;
+                });
+                
+                // Instantly open the navigation for the next best order
+                startSession(nextTasks[0].id);
+            } else {
+                endSession(); // Queue is empty, go home
+            }
+        }
+
+        async function verifyOTP() {
+            const val = document.getElementById('otp-input').value;
+            if(val == activeOrder.otp) {
+                if(!supabaseClient) return showToast("App offline.", "error");
+                
+                let amtCash = 0, amtUpi = 0;
+                if(selectedPayment === 'CASH') amtCash = activeOrder.amount;
+                else if(selectedPayment === 'UPI') amtUpi = activeOrder.amount;
+                else if(selectedPayment === 'SPLIT') { amtCash = parseFloat(document.getElementById('split-cash').value)||0; amtUpi = parseFloat(document.getElementById('split-upi').value)||0; }
+                
+                const rName = currentUser.user_metadata.full_name;
+                const cachedOrder = { ...activeOrder }; 
+
+                // ANIMATION SUCCESS!
+                document.getElementById('btn-verify').innerHTML = `<span class="material-symbols-rounded">check_circle</span> Verified!`;
+                document.getElementById('btn-verify').style.background = "#059669";
+
+                const { error } = await supabaseClient.from('orders')
+                    .update({ status: 'DELIVERED', payment_method: selectedPayment, amount_cash: amtCash, amount_upi: amtUpi, rider_name: rName }) 
+                    .eq('id', activeSessionId);
+                
+                if(error) { showToast("Sync failed.", "error"); return; }
+                
+                setTimeout(() => {
+                    showToast("Delivery Complete!", "success");
+                    document.getElementById('btn-verify').innerHTML = `Verify & Complete`;
+                    closeHandover(); proceedToNextOrEnd(cachedOrder);
+                }, 800);
+                
+            } else { showToast("Incorrect PIN.", "error"); document.getElementById('otp-input').value = ''; checkInputs(); }
+        }
+
+        function failDelivery(reason) {
+            showConfirm("Mark Undelivered?", `Reason: ${reason}`, "cancel", "red", async () => {
+                if(!supabaseClient) return showToast("Must be online.", "error");
+                
+                const cachedOrder = { ...activeOrder };
+                const { error } = await supabaseClient.from('orders').update({ status: 'RETURNED', return_reason: reason }).eq('id', activeSessionId);
+                
+                if(error) return showToast("Sync failed.", "error");
+                showToast("Order Returned.", "error");
+                closeHandover(); proceedToNextOrEnd(cachedOrder); 
+            });
+        }
+
+        if(supabaseClient) { checkAuth(); }
+    </script>
+</body>
+</html>

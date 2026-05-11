@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MQuick | Packing Station</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,500,1,0" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- PWA Setup -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0A59F7">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').catch(err => console.log('SW setup failed: ', err));
+            });
+        }
+    </script>
+
+    <style>
+        :root {
+            --bg-app: #F8FAFC; --surface: #FFFFFF; --border-color: #E2E8F0; --text-main: #0F172A; --text-muted: #64748B;
+            --c-blue: #2563EB; --c-green: #16A34A; --c-red: #DC2626; --c-yellow: #D97706;
+            --radius-card: 16px; --radius-pill: 999px;
+            --shadow-soft: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            --shadow-btn: 0 8px 20px rgba(0, 209, 102, 0.25);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { background-color: var(--bg-app); color: var(--text-main); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+        header { background: var(--surface); padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; z-index: 100; border-bottom: 1px solid var(--border-color); flex-shrink: 0; padding-top: max(16px, env(safe-area-inset-top)); }
+        .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 18px; color: var(--text-main); letter-spacing: -0.3px; }
+        .brand .material-symbols-rounded { color: var(--c-blue); font-size: 24px; }
+        .badge-count { background: #EFF6FF; color: var(--c-blue); padding: 6px 12px; border-radius: var(--radius-pill); font-weight: 600; font-size: 13px; transition: 0.3s; display: flex; align-items: center; gap: 6px;}
+
+        main { flex: 1; padding: 24px; max-width: 1400px; margin: 0 auto; width: 100%; overflow-y: auto; padding-bottom: 100px; }
+        .pack-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+        @media (min-width: 768px) { .pack-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (min-width: 1024px) { .pack-grid { grid-template-columns: repeat(3, 1fr); } }
+
+        .pack-card { background: var(--surface); border-radius: var(--radius-card); padding: 20px; box-shadow: var(--shadow-soft); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 20px; transition: all 0.2s; position: relative; overflow: hidden; animation: zoomIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);}
+        @keyframes zoomIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+
+        .card-top { display: flex; justify-content: space-between; align-items: flex-start; }
+        .customer { font-size: 16px; font-weight: 600; color: var(--text-main); }
+        .timer { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 8px; display: flex; align-items: center; gap: 4px;}
+        .time-safe { background: #F1F5F9; color: var(--text-muted); }
+        .time-warn { background: #FEF2F2; color: var(--c-red); animation: pulse 1.5s infinite; border: 1px solid #FECACA;}
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+        .bag-display { text-align: center; padding: 20px 0; background: #F8FAFC; border-radius: 12px; border: 1px dashed #CBD5E1; }
+        .bag-label { display: block; font-size: 11px; color: var(--text-muted); font-weight: 600; letter-spacing: 0.5px; margin-bottom: 8px; text-transform: uppercase; }
+        .bag-value { display: inline-block; font-size: 32px; font-weight: 800; color: var(--c-blue); letter-spacing: 4px; background: white; padding: 8px 24px; border-radius: 12px; border: 1px solid #E2E8F0; box-shadow: var(--shadow-soft);}
+
+        .card-actions { display: flex; flex-direction: column; gap: 12px; }
+        .btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 14px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; outline: none; transition: 0.2s; }
+        .btn:active { transform: scale(0.97); }
+        .btn-outline { background: white; border: 1px solid var(--border-color); color: var(--text-main); }
+        .btn-outline:hover { background: #F8FAFC; }
+        .btn-outline.disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-primary { background: var(--c-green); color: white; box-shadow: var(--shadow-soft); }
+        .btn-primary:hover { background: #15803D; }
+
+        .empty-state { text-align: center; padding: 100px 20px; color: var(--text-muted); grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center;}
+        .empty-state .material-symbols-rounded { font-size: 48px; color: #CBD5E1; margin-bottom: 16px; }
+
+        #lightbox { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.95); z-index: 9999; display: none; align-items: center; justify-content: center; flex-direction: column; }
+        #lightbox img { max-width: 95vw; max-height: 80vh; border-radius: 16px; object-fit: contain; box-shadow: 0 20px 40px rgba(0,0,0,0.3); }
+        .lightbox-close { position: absolute; top: 24px; right: 24px; background: white; color: var(--text-main); border: none; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-soft); }
+
+        /* Auth Screen */
+        #auth-screen { position: fixed; inset: 0; background: var(--bg-app); z-index: 99999; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+        .auth-card { background: white; padding: 32px; border-radius: 24px; box-shadow: var(--shadow-soft); width: 90%; max-width: 360px; text-align: center; border: 1px solid var(--border-color); }
+        .auth-input { width: 100%; padding: 14px; margin-bottom: 16px; border: 1px solid var(--border-color); border-radius: 12px; font-size: 14px; outline: none; background: #F8FAFC; transition: 0.2s; }
+        .auth-input:focus { border-color: var(--c-blue); background: white; }
+        .btn-logout { background: #FEF2F2; color: var(--c-red); border: none; padding: 8px 16px; border-radius: 10px; font-weight: 600; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+        /* Custom Toast & Confirm Modal */
+        #toast-container { position: fixed; top: max(20px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 999999; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+        .toast { background: var(--surface); color: var(--text-main); padding: 14px 24px; border-radius: var(--radius-pill); box-shadow: 0 10px 40px rgba(0,0,0,0.15); font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 10px; animation: toastIn 0.3s forwards; border: 1px solid var(--border-color); }
+        .toast.success { border-left: 4px solid var(--c-green); }
+        .toast.error { border-left: 4px solid var(--c-red); }
+        @keyframes toastIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(5px); z-index: 100000; display: none; align-items: center; justify-content: center; }
+        .modal-box { background: white; padding: 24px; border-radius: 20px; width: 90%; max-width: 320px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+    </style>
+</head>
+<body>
+
+    <!-- LOGIN SCREEN -->
+    <div id="auth-screen">
+        <div class="auth-card">
+            <span class="material-symbols-rounded" style="font-size: 48px; color: var(--c-green); margin-bottom: 16px;">inventory_2</span>
+            <h2 style="font-size: 22px; font-weight: 800; margin-bottom: 8px;">Packer Station</h2>
+            <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 32px;">Sign in to your account</p>
+            
+            <input type="email" id="auth-email" class="auth-input" placeholder="Email Address">
+            <input type="password" id="auth-pass" class="auth-input" placeholder="Password" style="margin-bottom: 24px;">
+            
+            <button class="btn btn-primary" style="width: 100%;" onclick="login()">Log In</button>
+        </div>
+    </div>
+
+    <header>
+        <div class="brand"><span class="material-symbols-rounded">inventory_2</span> MQuick Packing</div>
+        <div style="display:flex; align-items:center; gap:12px;">
+            <div class="badge-count" id="pack-count"><span class="material-symbols-rounded" style="font-size: 16px;">pending_actions</span> 0 Pending</div>
+            <button class="btn-logout" onclick="logout()"><span class="material-symbols-rounded" style="font-size: 16px;">logout</span></button>
+        </div>
+    </header>
+
+    <main>
+        <div class="pack-grid" id="pack-grid"></div>
+    </main>
+    <!-- UI TOOLKIT -->
+    <div id="toast-container"></div>
+    <div class="modal-overlay" id="confirm-modal">
+        <div class="modal-box">
+            <div id="confirm-icon" class="material-symbols-rounded" style="font-size: 48px; margin-bottom: 16px; color: var(--c-red);">logout</div>
+            <div style="font-size: 18px; font-weight: 800; margin-bottom: 8px;" id="confirm-title">Sign Out</div>
+            <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 24px;" id="confirm-msg">End your packing session?</p>
+            <div style="display:flex; gap:12px;">
+                <button class="btn btn-outline" style="flex:1;" onclick="closeConfirm()">Cancel</button>
+                <button class="btn btn-primary" id="confirm-btn-yes" style="flex:1; background:var(--c-red);">Yes, Logout</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="lightbox" onclick="closeLightbox(event)">
+        <button class="lightbox-close material-symbols-rounded" onclick="document.getElementById('lightbox').style.display='none'">close</button>
+        <img id="lightbox-img" src="">
+    </div>
+
+    <script>
+        // --- 1. SUPABASE CLOUD SETUP ---
+        const SUPABASE_URL = 'https://smuzvvmslrpgrgluisxt.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNtdXp2dm1zbHJwZ3JnbHVpc3h0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3OTIwODAsImV4cCI6MjA5MTM2ODA4MH0.TS9aMtc24O8GASSC1XSsufPBq7TVQhhsMnGsh685T4g';
+        
+        let supabaseClient = null;
+        if (SUPABASE_URL.startsWith('http')) { supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
+        let db = [];
+
+        async function fetchOrders() {
+            if(!supabaseClient) return;
+            const { data, error } = await supabaseClient.from('orders').select('*').eq('status', 'BILLED').order('created_at', { ascending: true });
+            if(error) { console.error(error); return; }
+            db = data; renderPacker();
+        }
+
+        function renderPacker() {
+            const packGrid = document.getElementById('pack-grid');
+            const countBadge = document.getElementById('pack-count');
+            countBadge.innerHTML = `<span class="material-symbols-rounded" style="font-size: 16px;">pending_actions</span> ${db.length} Pending`;
+            
+            if(db.length > 0) { countBadge.style.background = '#FEF2F2'; countBadge.style.color = 'var(--c-red)'; } 
+            else { countBadge.style.background = '#EFF6FF'; countBadge.style.color = 'var(--c-blue)'; }
+
+            if(db.length === 0) {
+                packGrid.innerHTML = `<div class="empty-state"><span class="material-symbols-rounded">task_alt</span><h2 style="font-size:18px; color:var(--text-main); margin-bottom:4px;">All caught up!</h2><p>No orders awaiting packing right now.</p></div>`; return;
+            }
+
+            let html = '';
+            db.forEach(o => {
+                const elapsed = Math.floor((Date.now() - new Date(o.created_at).getTime()) / 60000);
+                const timeClass = elapsed >= 20 ? 'time-warn' : 'time-safe';
+                const photoBtn = o.photo_url ? `<button class="btn btn-outline" onclick="viewPhoto('${o.photo_url}')"><span class="material-symbols-rounded">receipt_long</span> View Bill</button>` : `<button class="btn btn-outline disabled"><span class="material-symbols-rounded">image_not_supported</span> No Bill Photo</button>`;
+
+                html += `
+                <div class="pack-card" id="card-${o.id}">
+                    <div class="card-top">
+                        <div class="customer">${o.customer_name}</div>
+                        <div class="timer ${timeClass}"><span class="material-symbols-rounded" style="font-size:14px">schedule</span> ${elapsed}m</div>
+                    </div>
+                    <div class="bag-display">
+                        <span class="bag-label">Bag ID Reference</span>
+                        <span class="bag-value">${o.bag_id}</span>
+                    </div>
+                    <div class="card-actions">
+                        ${photoBtn}
+                        <button class="btn btn-primary" onclick="markPacked('${o.id}')"><span class="material-symbols-rounded">check_circle</span> Mark as Packed</button>
+                    </div>
+                </div>`;
+            });
+            packGrid.innerHTML = html;
+        }
+
+        function viewPhoto(src) { document.getElementById('lightbox-img').src = src; document.getElementById('lightbox').style.display = 'flex'; }
+        function closeLightbox(e) { if(e.target.id === 'lightbox' || e.target.classList.contains('lightbox-hint')) { document.getElementById('lightbox').style.display = 'none'; } }
+        function showToast(msg, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const icon = type === 'success' ? 'check_circle' : 'error';
+            const color = type === 'success' ? 'var(--c-green)' : 'var(--c-red)';
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<span class="material-symbols-rounded" style="color:${color}">${icon}</span> ${msg}`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.style.opacity = '0'; toast.style.transform = 'translateY(-20px)'; toast.style.transition = '0.3s'; setTimeout(() => toast.remove(), 300); }, 3000);
+        }
+
+        let confirmCallback = null;
+        function showConfirm(callback) { confirmCallback = callback; document.getElementById('confirm-modal').style.display = 'flex'; }
+        function closeConfirm() { document.getElementById('confirm-modal').style.display = 'none'; confirmCallback = null; }
+        document.getElementById('confirm-btn-yes').addEventListener('click', () => { if(confirmCallback) confirmCallback(); closeConfirm(); });
+        
+
+        let currentUser = null;
+
+        async function checkAuth() {
+            if(!supabaseClient) return;
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if(session) {
+                currentUser = session.user;
+                if(currentUser.user_metadata.role !== 'PACKER' && currentUser.user_metadata.role !== 'ADMIN') {
+                    alert("Unauthorized. Packer access only."); logout(); return;
+                }
+                document.getElementById('auth-screen').style.display = 'none';
+                fetchOrders(); setInterval(fetchOrders, 3000);
+            } else {
+                document.getElementById('auth-screen').style.display = 'flex';
+            }
+        }
+
+        async function login() {
+            const email = document.getElementById('auth-email').value.trim();
+            const pass = document.getElementById('auth-pass').value;
+            const { error } = await supabaseClient.auth.signInWithPassword({ email, password: pass });
+            if(error) alert(error.message); else checkAuth();
+        }
+
+        async function markPacked(id) {
+            if(!supabaseClient) return showToast("System Offline.", "error");
+            
+            const card = document.getElementById(`card-${id}`);
+            if(card) {
+                // Visual Success Animation before removing
+                card.style.transform = "scale(1.05)"; 
+                card.style.border = "2px solid var(--c-green)";
+                setTimeout(async () => {
+                    card.style.transform = "scale(0.8)"; card.style.opacity = "0";
+                    const { error } = await supabaseClient.from('orders').update({ status: 'PACKED' }).eq('id', id);
+                    if(!error) { showToast("Bag Verified & Packed!", "success"); db = db.filter(o => o.id !== id); setTimeout(renderPacker, 200); }
+                }, 300);
+            }
+        }
+
+        function logout() { showConfirm(async () => { await supabaseClient.auth.signOut(); window.location.reload(); }); }
+
+        if(supabaseClient) { checkAuth(); } 
+        else { document.getElementById('pack-grid').innerHTML = `<div class="empty-state"><span class="material-symbols-rounded" style="color:var(--c-red)">cloud_off</span><h2>Database Offline</h2></div>`; }
+    </script>
+</body>
+</html>

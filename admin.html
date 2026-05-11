@@ -1,0 +1,1164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MQuick | Operations Command</title>
+    
+    <!-- Standard Font & Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,600,1,0" rel="stylesheet" />
+    
+    <!-- Supabase JS Library -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <!-- Leaflet Map CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- PWA Setup -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0A59F7">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').catch(err => console.log('SW setup failed: ', err));
+            });
+        }
+    </script>
+
+    <style>
+        /* ColorOS Vibrant Palette */
+        :root {
+            --bg-app: #F5F7FA;
+            --surface: #FFFFFF;
+            --border-color: #EBF0F5;
+            --text-main: #121826;
+            --text-muted: #6B7280;
+            
+            --c-blue: #0A59F7;
+            --c-green: #00D166;
+            --c-yellow: #FFB800;
+            --c-red: #FF2929;
+            --c-slate: #64748B;
+            
+            --radius-input: 14px;
+            --radius-card: 24px;
+            --radius-pill: 999px;
+            
+            --shadow-soft: 0 8px 24px rgba(10, 20, 35, 0.04);
+            --shadow-map: 0 12px 32px rgba(10, 89, 247, 0.08);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg-app); color: var(--text-main); display: flex; height: 100vh; overflow: hidden; font-size: 14px; -webkit-tap-highlight-color: transparent;}
+
+        /* --- COLLAPSIBLE SIDEBAR (DESKTOP) --- */
+        aside { width: 88px; background: var(--surface); display: flex; flex-direction: column; z-index: 50; border-right: 1px solid var(--border-color); transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        aside.expanded { width: 280px; }
+        
+        .sidebar-brand { padding: 32px 0; display: flex; align-items: center; justify-content: center; gap: 12px; }
+        aside.expanded .sidebar-brand { padding: 32px 24px; justify-content: flex-start; }
+        .sidebar-brand .material-symbols-rounded { color: var(--c-blue); font-size: 32px; cursor: pointer; transition: transform 0.2s; }
+        .sidebar-brand .material-symbols-rounded:hover { transform: scale(1.1); }
+        .brand-text { font-size: 22px; font-weight: 800; color: var(--text-main); letter-spacing: -0.5px; white-space: nowrap; opacity: 0; display: none; }
+        aside.expanded .brand-text { opacity: 1; display: block; }
+        
+        .desktop-nav { display: flex; flex-direction: column; gap: 4px; padding-top: 8px; flex: 1;}
+        .nav-item { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 16px; margin: 4px 16px; cursor: pointer; font-weight: 700; transition: all 0.3s ease; border-radius: var(--radius-pill); color: var(--text-muted); white-space: nowrap; overflow: hidden; }
+        aside.expanded .nav-item { justify-content: flex-start; padding: 16px 24px; }
+        .nav-item:hover { background-color: #F0F4FF; color: var(--c-blue); }
+        .nav-item.active { background-color: var(--c-blue); color: white; box-shadow: 0 8px 20px rgba(10, 89, 247, 0.25); }
+        .nav-text { opacity: 0; display: none; }
+        aside.expanded .nav-text { opacity: 1; display: block; }
+
+        .btn-danger-side { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 16px; margin: 24px 16px; border-radius: var(--radius-pill); font-weight: 800; cursor: pointer; transition: all 0.3s; border: none; background: #FFEBEE; color: var(--c-red); white-space: nowrap; overflow: hidden; }
+        .btn-danger-side:hover { background: var(--c-red); color: white; box-shadow: 0 8px 20px rgba(255, 41, 41, 0.3); }
+
+        /* --- MOBILE BOTTOM NAV --- */
+        .mobile-nav { display: none; }
+
+        /* --- WORKSPACE --- */
+        main { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+        header { height: 80px; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; background: transparent; z-index: 5; flex-shrink: 0; }
+        .header-left { display: flex; align-items: center; gap: 24px; }
+        .breadcrumb { font-size: 24px; font-weight: 800; color: var(--text-main); letter-spacing: -0.5px; }
+        
+        /* SINGLE NATIVE DATE PICKER */
+        .date-picker-wrap { background: var(--surface); padding: 6px 16px; border-radius: var(--radius-pill); box-shadow: var(--shadow-soft); display: none; align-items: center; border: 1px solid var(--border-color); overflow: hidden; transition: 0.2s; }
+        .date-picker-wrap:hover { border-color: var(--c-blue); }
+        .date-picker-wrap.show { display: flex; }
+        .native-date-picker { border: none; outline: none; font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 700; color: var(--text-main); background: transparent; cursor: pointer; padding: 6px 4px; }
+        ::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.6; transition: 0.2s; }
+        ::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+
+        .content-area { flex: 1; overflow-y: auto; padding: 0 32px 32px 32px; display: flex; flex-direction: column; }
+        .view { display: none; width: 100%; max-width: 1200px; margin: 0 auto; animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 0; }
+        .view.active { display: block; }
+        
+        #v-tracker.active { display: flex; flex-direction: row; gap: 24px; height: 100%; max-width: 100%; margin: 0; overflow: hidden; transform: none !important; }
+        @keyframes slideUp { 
+            0% { opacity: 0; transform: translateY(15px); } 
+            100% { opacity: 1; transform: none; } 
+        }
+
+        /* Cards & Forms */
+        .card { background: var(--surface); border-radius: var(--radius-card); box-shadow: var(--shadow-soft); overflow: hidden; margin-bottom: 24px; flex-shrink: 0; }
+        .card-header { padding: 20px 24px; font-weight: 800; font-size: 16px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between;}
+        .card-body { padding: 24px; }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        label { font-size: 13px; font-weight: 700; color: var(--text-muted); padding-left: 8px; }
+        
+        input.vib-input { padding: 14px 20px; border: 2px solid transparent; background: #F5F7FA; border-radius: var(--radius-input); font-size: 14px; color: var(--text-main); font-weight: 600; transition: all 0.3s; width: 100%; }
+        input.vib-input:focus { border-color: var(--c-blue); background: white; outline: none; box-shadow: 0 4px 16px rgba(10, 89, 247, 0.1); }
+        input[type="time"].vib-input { font-family: 'Inter', sans-serif; }
+
+        .dist-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--radius-pill); font-size: 12px; font-weight: 700; margin-top: 8px; width: fit-content; transition: 0.3s; opacity: 0; }
+        .dist-valid { background: #E6F8F0; color: var(--c-green); opacity: 1; }
+        .dist-invalid { background: rgba(255, 41, 41, 0.1); color: var(--c-red); opacity: 1; animation: shake 0.4s; }
+        .dist-warning { background: #FFF3E0; color: var(--c-yellow); opacity: 1; }
+        @keyframes shake { 0%, 100% {transform: translateX(0);} 25% {transform: translateX(-5px);} 75% {transform: translateX(5px);} }
+
+        /* Buttons */
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 28px; border-radius: var(--radius-pill); font-size: 14px; font-weight: 800; cursor: pointer; transition: all 0.3s; border: none; outline: none; }
+        .btn-blue { background: var(--c-blue); color: #fff; box-shadow: 0 8px 20px rgba(10, 89, 247, 0.3); }
+        .btn-green { background: var(--c-green); color: #fff; box-shadow: 0 8px 20px rgba(0, 209, 102, 0.3); }
+        .btn:hover { transform: scale(1.02); }
+
+        /* Operations Row */
+        .op-row { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid var(--border-color); }
+        .op-row:last-child { border-bottom: none; }
+        .op-meta { display: flex; flex-direction: column; gap: 4px; }
+        .bag-id-badge { display: inline-block; background: #F0F4FF; color: var(--c-blue); padding: 4px 12px; border-radius: var(--radius-pill); font-weight: 800; font-size: 16px; }
+        .op-customer { font-size: 13px; color: var(--text-muted); font-weight: 600; }
+        .op-controls { display: flex; align-items: center; gap: 16px; }
+        .doc-zone { position: relative; width: 80px; height: 60px; border-radius: 12px; background: #F0F4FF; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; border: 2px dashed rgba(10, 89, 247, 0.3); color: var(--c-blue); }
+        .doc-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; z-index: 2; }
+        .doc-preview { width: 100%; height: 100%; object-fit: cover; z-index: 1; }
+        .btn-remove-doc { position: absolute; top: 4px; right: 4px; z-index: 3; background: var(--c-red); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 12px;}
+
+        /* --- SETTLEMENT DASHBOARD --- */
+        .settle-header-box { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: var(--surface); padding: 12px 24px; border-radius: 20px; box-shadow: var(--shadow-soft); border: 1px solid var(--border-color); }
+        .settle-header-title { font-weight: 800; font-size: 16px; color: var(--text-main); }
+        .settle-controls { display: flex; gap: 12px; align-items: center; }
+        .rider-filter-select { padding: 8px 16px; height: 40px; font-size: 13px; width: 180px; }
+        .btn-settle { padding: 8px 16px; height: 40px; font-size: 13px; }
+        .btn-settle-text { display: inline; }
+        
+        .settlement-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+        .settle-card { background: var(--surface); border-radius: 20px; padding: 24px; border: 1px solid var(--border-color); box-shadow: var(--shadow-soft); }
+        .settle-card.highlight { background: var(--c-blue); border: none; color: white; box-shadow: 0 8px 24px rgba(10, 89, 247, 0.25);}
+        .settle-card.highlight .s-title { color: #DBEAFE; }
+        .s-title { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+        .s-value { font-size: 32px; font-weight: 800; line-height: 1; }
+        .s-list-item { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border-color); }
+        .s-list-item:last-child { border-bottom: none; }
+        .s-method { font-size: 11px; font-weight: 700; background: #F1F5F9; color: var(--text-muted); padding: 4px 8px; border-radius: 6px; }
+
+        /* --- TRACKER LAYOUT --- */
+        .tracker-left { flex: 1; display: flex; flex-direction: column; gap: 20px; min-width: 0; height: 100%; overflow: hidden; }
+        .metrics-row { display: flex; gap: 12px; flex-shrink: 0; width: 100%; }
+        .metric-tile { background: var(--surface); border-radius: 16px; padding: 12px 10px; box-shadow: var(--shadow-soft); display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 8px; flex: 1; border: 1px solid var(--border-color); min-width: 0; }
+        .metric-header { display: flex; align-items: center; gap: 8px; width: 100%; }
+        .metric-icon { width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+        .metric-data { min-width: 0; width: 100%; }
+        .metric-data h4 { font-size: 10px; color: var(--text-muted); font-weight: 800; text-transform: uppercase; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .metric-tile > .metric-data span { font-size: 20px; font-weight: 800; color: var(--text-main); line-height: 1; }
+        
+        .icon-yellow { background: rgba(255, 184, 0, 0.15); color: var(--c-yellow); }
+        .icon-blue { background: rgba(10, 89, 247, 0.15); color: var(--c-blue); }
+        .icon-red { background: rgba(255, 41, 41, 0.15); color: var(--c-red); }
+        .icon-green { background: rgba(0, 209, 102, 0.15); color: var(--c-green); }
+        .icon-slate { background: rgba(100, 116, 139, 0.15); color: var(--c-slate); }
+
+        /* PERFECT ENTERPRISE TABLE */
+        .table-wrapper { flex: 1; background: var(--surface); border-radius: 20px; overflow-y: auto; overflow-x: auto; box-shadow: var(--shadow-soft); border: 1px solid var(--border-color); min-height: 0; position: relative;}
+        table { width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; }
+        
+        th { padding: 14px 20px; color: var(--text-muted); font-weight: 800; font-size: 11px; text-transform: uppercase; background: var(--surface); border-bottom: 2px solid var(--border-color); border-right: 1px solid var(--border-color); position: sticky; top: 0; z-index: 10; white-space: nowrap; }
+        th:last-child { border-right: none; }
+        
+        td { padding: 14px 20px; border-bottom: 1px solid var(--border-color); border-right: 1px solid var(--border-color); vertical-align: middle; font-weight: 600; font-size: 13px; background: var(--surface); white-space: nowrap;}
+        td:last-child { border-right: none; }
+        
+        /* Sticky First Column (Bag ID) */
+        th:first-child { left: 0; z-index: 11; border-right: 2px solid var(--border-color); background: #F8FAFC;}
+        td:first-child { position: sticky; left: 0; z-index: 5; border-right: 2px solid var(--border-color); background: #F8FAFC;}
+        
+        tr:last-child td { border-bottom: none; }
+
+        .tag { display: inline-flex; padding: 4px 10px; border-radius: var(--radius-pill); font-size: 11px; font-weight: 800; text-transform: uppercase; }
+        .tag-draft { background: rgba(255, 184, 0, 0.15); color: var(--c-yellow); }
+        .tag-billed { background: rgba(10, 89, 247, 0.15); color: var(--c-blue); }
+        .tag-packed { background: rgba(255, 41, 41, 0.15); color: var(--c-red); }
+        .tag-transit { background: rgba(0, 209, 102, 0.15); color: var(--c-green); }
+        .tag-delivered { background: rgba(100, 116, 139, 0.15); color: var(--c-slate); }
+        .time-critical { color: var(--c-red); font-weight: 800; display: flex; align-items: center; gap: 4px; background: rgba(255, 41, 41, 0.1); padding: 4px 8px; border-radius: var(--radius-pill); }
+        .otp-text { font-family: monospace; font-weight: 800; font-size: 14px; letter-spacing: 1px; color: var(--c-blue); background: #F0F4FF; padding: 4px 8px; border-radius: 6px; }
+
+        /* PERFECT SQUARE MAP */
+        .tracker-right { height: 100%; aspect-ratio: 1 / 1; max-width: 45%; position: relative; border-radius: 20px; overflow: hidden; box-shadow: var(--shadow-map); border: 4px solid white; background: #e5e5e5; flex-shrink: 0; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        #map-container { width: 100%; height: 100%; z-index: 1; }
+        
+        /* Fullscreen Map Override */
+        .tracker-right.fullscreen { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; max-width: 100% !important; aspect-ratio: auto !important; z-index: 9999 !important; border-radius: 0 !important; border: none !important; margin: 0 !important; transform: none !important; }
+        .btn-fullscreen { position: absolute; bottom: 16px; right: 16px; z-index: 10000 !important; background: white; color: var(--text-main); border: none; width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-size: 22px; transition: 0.2s; }
+        .tracker-right.fullscreen .btn-fullscreen { position: fixed !important; bottom: 24px !important; right: 24px !important; }
+        .btn-fullscreen:hover { background: var(--c-blue); color: white; }
+
+        /* Map Labels */
+        .map-pin-container { position: absolute; } 
+        .map-dot { position: absolute; width: 20px; height: 20px; left: -10px; top: -10px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; font-weight: 800; color: white; font-size: 14px; z-index: 2; }
+        .map-dot.cluster { width: 24px; height: 24px; left: -12px; top: -12px; font-size: 12px; }
+        .urgent-pulse { background: var(--c-red) !important; animation: redPulse 1.2s infinite; }
+        @keyframes redPulse { 0% { box-shadow: 0 0 0 0 rgba(255, 41, 41, 0.7); } 70% { box-shadow: 0 0 0 12px rgba(255, 41, 41, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 41, 41, 0); } }
+        .map-label { position: absolute; background: rgba(255, 255, 255, 0.95); padding: 2px 8px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); white-space: nowrap; text-align: center; line-height: 1.2; pointer-events: none; transition: font-size 0.2s; border: 1px solid rgba(0,0,0,0.05); z-index: 3; }
+        .map-label-bag { font-weight: 800; color: var(--c-blue); }
+        .map-label-name { font-weight: 600; color: var(--text-main); }
+        .label-bottom { top: 14px; left: 0; transform: translateX(-50%); }
+        .label-top { bottom: 14px; left: 0; transform: translateX(-50%); }
+        .label-right { left: 14px; top: 0; transform: translateY(-50%); }
+        .label-left { right: 14px; top: 0; transform: translateY(-50%); }
+
+        #lightbox { position: fixed; inset: 0; background: rgba(18, 24, 38, 0.9); backdrop-filter: blur(10px); z-index: 9999; display: none; align-items: center; justify-content: center; }
+        #lightbox img { max-width: 85vw; max-height: 85vh; border-radius: var(--radius-card); box-shadow: 0 30px 60px rgba(0,0,0,0.5); }
+        .lightbox-close { position: absolute; top: 40px; right: 40px; background: white; color: var(--text-main); border: none; width: 48px; height: 48px; border-radius: 50%; cursor: pointer; font-weight: bold; font-size: 20px; }
+
+        .modal-overlay { position: fixed; inset: 0; background: rgba(18, 24, 38, 0.8); backdrop-filter: blur(5px); z-index: 10000; display: none; align-items: center; justify-content: center; }
+        .modal-box { background: white; padding: 24px; border-radius: 20px; width: 90%; max-width: 400px; box-shadow: var(--shadow-map); }
+        .modal-title { font-size: 18px; font-weight: 800; margin-bottom: 16px; }
+
+        /* Auth Screen */
+        #auth-screen { position: fixed; inset: 0; background: var(--bg-app); z-index: 99999; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+        .auth-card { background: white; padding: 40px; border-radius: 24px; box-shadow: var(--shadow-map); width: 90%; max-width: 400px; text-align: center; border: 1px solid var(--border-color); }
+        
+        /* Team Table & Clean Dropdowns */
+        .staff-tag { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; background: #F1F5F9; color: var(--text-muted); }
+        .staff-tag.ADMIN { background: #FEF2F2; color: var(--c-red); }
+        .staff-tag.RIDER { background: #EFF6FF; color: var(--c-blue); }
+        .staff-tag.PACKER { background: #F0FDF4; color: var(--c-green); }
+        
+        /* Modern Native Dropdowns */
+        select.vib-input { 
+            appearance: none; 
+            -webkit-appearance: none; 
+            background-color: #F8FAFC; 
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23121826' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e"); 
+            background-repeat: no-repeat; 
+            background-position: right 16px center; 
+            background-size: 14px; 
+            padding-right: 40px !important; 
+            cursor: pointer; 
+            font-weight: 700;
+            color: var(--text-main);
+            border: 2px solid transparent;
+        }
+        select.vib-input:focus { border-color: var(--c-blue); background-color: white; }
+
+        /* Custom Toast & Confirm Modal */
+        #toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 999999; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+        .toast { background: var(--surface); color: var(--text-main); padding: 14px 24px; border-radius: var(--radius-pill); box-shadow: 0 10px 40px rgba(0,0,0,0.15); font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 10px; animation: toastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; border: 1px solid var(--border-color); }
+        .toast.success { border-left: 4px solid var(--c-green); }
+        .toast.error { border-left: 4px solid var(--c-red); }
+        @keyframes toastIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes toastOut { to { opacity: 0; transform: translateY(-20px); } }
+
+        /* --- RESPONSIVE MOBILE FIXES --- */
+        @media (max-width: 900px) {
+            /* Transform Sidebar to Bottom Nav */
+            aside { display: none; } 
+            .mobile-nav { display: flex; background: var(--surface); border-top: 1px solid var(--border-color); justify-content: space-between; padding: 8px 8px; padding-bottom: max(8px, env(safe-area-inset-bottom)); position: fixed; bottom: 0; left: 0; width: 100%; z-index: 1000;}
+            .nav-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 8px 4px; color: var(--text-muted); background: none; border: none; cursor: pointer; transition: 0.2s; border-radius: 12px; flex: 1;}
+            .nav-btn .material-symbols-rounded { font-size: 22px; }
+            .nav-btn span { font-size: 10px; font-weight: 700; white-space: nowrap;}
+            .nav-btn.active { color: var(--c-blue); background: #EFF6FF; }
+
+            /* Adjust Workspace for Bottom Nav */
+            main { padding-bottom: 70px; }
+            header { padding: 0 20px; height: 70px; }
+            .breadcrumb { font-size: 20px; }
+            .content-area { padding: 0 20px 20px 20px; }
+            
+            /* Forms */
+            .form-grid { grid-template-columns: 1fr; gap: 12px; }
+            .op-row { flex-direction: column; align-items: flex-start; gap: 16px; }
+            .op-controls { width: 100%; justify-content: space-between; }
+            .settlement-grid { grid-template-columns: 1fr 1fr; }
+            
+            /* Mobile Settlement Header Overrides */
+            .settle-header-box { padding: 12px; }
+            .settle-header-title { display: none; }
+            .settle-controls { width: 100%; justify-content: space-between; }
+            .rider-filter-select { width: 100% !important; flex: 1; }
+            .btn-settle { width: 44px; height: 44px; padding: 0; border-radius: 50%; justify-content: center; flex-shrink: 0; }
+            .btn-settle-text { display: none; }
+            .btn-settle .material-symbols-rounded { font-size: 22px !important; margin: 0; }
+
+            /* --- STACKED MOBILE TRACKER --- */
+            #v-tracker.active { flex-direction: column; overflow-y: auto; overflow-x: hidden; height: auto; display: flex; }
+            .tracker-left { flex: none; height: auto; overflow: visible; display: flex; flex-direction: column; }
+            
+            /* 5x1 Metric Tiles (Icons Only) */
+            .metrics-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; width: 100%; }
+            .metric-tile { padding: 10px 4px; flex-direction: column; align-items: center; text-align: center; gap: 6px; }
+            .metric-header { justify-content: center; }
+            .metric-data h4 { display: none; } /* Hide text on mobile */
+            .metric-icon { width: 24px; height: 24px; font-size: 14px; border-radius: 6px;}
+            .metric-tile > .metric-data span { font-size: 18px; }
+
+            .table-wrapper { overflow-x: auto; min-height: 250px; flex: none; }
+            
+            /* Map pushed to bottom */
+            .tracker-right { max-width: 100%; width: 100%; height: 350px; aspect-ratio: auto; flex: none; margin-bottom: 20px;}
+        }
+    </style>
+</head>
+<body>
+
+    <!-- LOGIN SCREEN -->
+    <div id="auth-screen">
+        <div class="auth-card">
+            <span class="material-symbols-rounded" style="font-size: 48px; color: var(--c-blue); margin-bottom: 16px;">bolt</span>
+            <h2 style="font-size: 24px; font-weight: 800; margin-bottom: 8px;">MQuick Admin</h2>
+            <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 32px;">Sign in to Command Center</p>
+            
+            <input type="email" id="auth-email" class="vib-input" placeholder="Admin Email" style="margin-bottom: 16px;">
+            <input type="password" id="auth-pass" class="vib-input" placeholder="Password" style="margin-bottom: 24px;">
+            
+            <button class="btn btn-blue" style="width: 100%;" onclick="login()">Access System</button>
+            <button class="btn btn-outline" id="btn-first-setup" style="width: 100%; margin-top: 12px; border: 1px dashed var(--c-blue); color: var(--c-blue);" onclick="createFirstAdmin()">First Time Setup</button>
+        </div>
+    </div>
+
+    <!-- DESKTOP SIDEBAR -->
+    <aside id="sidebar" class="">
+        <div class="sidebar-brand">
+            <span class="material-symbols-rounded" onclick="toggleSidebar()" title="Expand Menu">bolt</span>
+            <span class="brand-text">MQuick</span>
+        </div>
+        <div class="desktop-nav">
+            <div class="nav-item active" onclick="switchTab('v-intake', 'New Order', this)"><span class="material-symbols-rounded">add_circle</span> <span class="nav-text">Registration</span></div>
+            <div class="nav-item" onclick="switchTab('v-billing', 'Operations', this)"><span class="material-symbols-rounded">task_alt</span> <span class="nav-text">Billing & Verify</span></div>
+            <div class="nav-item" onclick="switchTab('v-tracker', 'Live Tracker', this)"><span class="material-symbols-rounded">explore</span> <span class="nav-text">GPS Monitor</span></div>
+            <div class="nav-item" onclick="switchTab('v-settle', 'EOD Settlement', this)"><span class="material-symbols-rounded">account_balance_wallet</span> <span class="nav-text">Settlement</span></div>
+            <div class="nav-item" onclick="switchTab('v-team', 'Team Management', this)"><span class="material-symbols-rounded">group</span> <span class="nav-text">Staff & Team</span></div>
+            <div class="nav-item" onclick="switchTab('v-settings', 'System Settings', this)"><span class="material-symbols-rounded">settings</span> <span class="nav-text">Settings</span></div>
+        </div>
+        <div style="margin-top: auto; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; padding: 16px;">
+            <button class="btn" style="background: #F1F5F9; color: var(--text-main); border: none; width: 100%; font-size: 13px;" onclick="logout()"><span class="material-symbols-rounded" style="font-size:18px;">logout</span> <span class="nav-text">Sign Out</span></button>
+        </div>
+    </aside>
+
+    <main>
+        <header>
+            <div class="header-left"><div class="breadcrumb" id="top-bar-title">New Order</div></div>
+            
+            <!-- NATIVE DATE PICKER FIX -->
+            <div class="date-picker-wrap" id="header-date-picker">
+                <input type="date" id="tracker-date" class="native-date-picker" onchange="changeTrackerDate()">
+            </div>
+        </header>
+
+        <div class="content-area">
+            
+            <!-- MODULE 1: INTAKE -->
+            <div id="v-intake" class="view active">
+                <div class="card" style="max-width: 800px;">
+                    <div class="card-header">Customer Details</div>
+                    <div class="card-body">
+                        <div class="form-grid">
+                            <div class="form-group"><label>Customer Name</label><input type="text" id="f-name" class="vib-input" placeholder="Full Name"></div>
+                            <div class="form-group"><label>WhatsApp Contact</label><input type="text" id="f-phone" class="vib-input" placeholder="91XXXXXXXXXX"></div>
+                            <div class="form-group"><label>Order Received Time</label><input type="time" id="f-time" class="vib-input"></div>
+                            <div class="form-group"><label>Alternate Contact</label><input type="text" id="f-alt" class="vib-input" placeholder="Backup Phone Number"></div>
+                            <div class="form-group" style="grid-column: 1 / -1;">
+                                <label>Google Maps Link or Coordinates</label>
+                                <input type="text" id="f-map" class="vib-input" placeholder="Paste URL or Lat,Lng" oninput="validateDistance(this.value)">
+                                <div id="dist-alert" class="dist-badge"></div>
+                            </div>
+                        </div>
+                        <div style="margin-top: 32px; display: flex; justify-content: flex-end;"><button class="btn btn-blue" onclick="createOrder()">Register Order <span class="material-symbols-rounded">arrow_forward</span></button></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MODULE 2: OPERATIONS -->
+            <div id="v-billing" class="view">
+                <div class="card" style="margin-bottom: 24px;"><div class="card-header" style="color: var(--c-blue);">Action Required: Billing Process</div><div id="billing-queue"></div></div>
+                <div class="card"><div class="card-header" style="color: var(--c-red);">Action Required: Packing Verification</div><div id="verify-queue"></div></div>
+            </div>
+
+            <!-- MODULE 3: TRACKER -->
+            <div id="v-tracker" class="view">
+                <div class="tracker-left">
+                    <div class="metrics-row">
+                        <div class="metric-tile"><div class="metric-header"><div class="metric-icon icon-yellow"><span class="material-symbols-rounded" style="font-size:16px;">edit_document</span></div><div class="metric-data"><h4>Drafted</h4></div></div><div class="metric-data"><span id="m-draft">0</span></div></div>
+                        <div class="metric-tile"><div class="metric-header"><div class="metric-icon icon-blue"><span class="material-symbols-rounded" style="font-size:16px;">receipt_long</span></div><div class="metric-data"><h4>Billed</h4></div></div><div class="metric-data"><span id="m-billed">0</span></div></div>
+                        <div class="metric-tile"><div class="metric-header"><div class="metric-icon icon-red"><span class="material-symbols-rounded" style="font-size:16px;">inventory_2</span></div><div class="metric-data"><h4>Packed</h4></div></div><div class="metric-data"><span id="m-packed">0</span></div></div>
+                        <div class="metric-tile"><div class="metric-header"><div class="metric-icon icon-green"><span class="material-symbols-rounded" style="font-size:16px;">two_wheeler</span></div><div class="metric-data"><h4>In Transit</h4></div></div><div class="metric-data"><span id="m-transit">0</span></div></div>
+                        <div class="metric-tile"><div class="metric-header"><div class="metric-icon icon-slate"><span class="material-symbols-rounded" style="font-size:16px;">check_circle</span></div><div class="metric-data"><h4>Delivered</h4></div></div><div class="metric-data"><span id="m-delivered">0</span></div></div>
+                    </div>
+                    
+                    <!-- NEW ENTERPRISE TABLE -->
+                    <div class="table-wrapper">
+                        <table>
+                            <thead><tr><th>Bag ID</th><th>Customer Info</th><th>Amount</th><th>OTP</th><th>Status</th><th>Timer</th></tr></thead>
+                            <tbody id="tracker-table"></tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="tracker-right" id="map-wrapper">
+                    <div id="map-container"></div>
+                    <button class="btn-fullscreen" onclick="toggleMapFullscreen()" title="Fullscreen Map"><span class="material-symbols-rounded" id="fs-icon">fullscreen</span></button>
+                </div>
+            </div>
+
+            <!-- MODULE 4: SETTLEMENT -->
+            <div id="v-settle" class="view">
+                <div class="settle-header-box">
+                    <div class="settle-header-title">Daily EOD Ledger</div>
+                    <div class="settle-controls">
+                        <select id="rider-filter" class="vib-input rider-filter-select" onchange="changeRiderFilter()">
+                            <option value="ALL">All Riders</option>
+                        </select>
+                        <button class="btn btn-green btn-settle" onclick="settleEOD()" title="Mark as Settled">
+                            <span class="material-symbols-rounded">done_all</span> <span class="btn-settle-text">Mark as Settled</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="settlement-grid">
+                    <div class="settle-card highlight">
+                        <div class="s-title"><span class="material-symbols-rounded" style="font-size: 18px;">payments</span> Cash Collected</div>
+                        <div class="s-value" id="s-cash">₹0</div>
+                    </div>
+                    <div class="settle-card">
+                        <div class="s-title"><span class="material-symbols-rounded" style="font-size: 18px;">qr_code_scanner</span> UPI Received</div>
+                        <div class="s-value" id="s-upi">₹0</div>
+                    </div>
+                    <div class="settle-card">
+                        <div class="s-title"><span class="material-symbols-rounded" style="font-size: 18px;">check_circle</span> Successful</div>
+                        <div class="s-value" id="s-success">0</div>
+                    </div>
+                    <div class="settle-card">
+                        <div class="s-title" style="color:var(--c-red)"><span class="material-symbols-rounded" style="font-size: 18px;">assignment_return</span> Returned</div>
+                        <div class="s-value" style="color:var(--c-red)" id="s-return">0</div>
+                    </div>
+                </div>
+                <div class="card" style="flex:1; display:flex; flex-direction:column; min-height: 0;">
+                    <div class="card-header" style="background: #F8FAFC; border-bottom: 1px solid var(--border-color);">
+                        <span>Completed Order Log</span>
+                        <span style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Amount</span>
+                    </div>
+                    <div style="overflow-y: auto; flex:1;" id="settle-list"></div>
+                </div>
+            </div>
+
+            <!-- MODULE 6: TEAM -->
+            <div id="v-team" class="view">
+                <div style="display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap;">
+                    
+                    <!-- Create Staff Form -->
+                    <div class="card" style="flex: 1; min-width: 300px;">
+                        <div class="card-header" style="color: var(--c-blue);">Register New Employee</div>
+                        <div class="card-body">
+                            <div class="form-group" style="margin-bottom: 16px;"><label>Full Name</label><input type="text" id="s-name" class="vib-input" placeholder="e.g. John Doe"></div>
+                            <div class="form-group" style="margin-bottom: 16px;"><label>Role</label>
+                                <select id="s-role" class="vib-input">
+                                    <option value="RIDER">Delivery Rider</option>
+                                    <option value="PACKER">Packer / Store Staff</option>
+                                    <option value="ADMIN">System Admin</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 16px;"><label>Login Email</label><input type="email" id="s-email" class="vib-input" placeholder="e.g. john@store.com"></div>
+                            <div class="form-group" style="margin-bottom: 24px;"><label>Temporary Password</label><input type="text" id="s-pass" class="vib-input" placeholder="Min 6 characters"></div>
+                            <button class="btn btn-blue" style="width: 100%;" onclick="createStaff()">Create Account</button>
+                        </div>
+                    </div>
+
+                    <!-- Staff List -->
+                    <div class="card" style="flex: 2; min-width: 0; flex-basis: 320px; max-width: 100%; display: flex; flex-direction: column; height: 450px;">
+                        <div class="card-header" style="flex-shrink: 0; border-bottom: 1px solid var(--border-color);">Active Team Roster</div>
+                        <div class="table-wrapper" style="flex: 1; border-radius: 0 0 24px 24px; border: none; box-shadow: none; margin: 0; width: 100%;">
+                            <table>
+                                <thead><tr><th>Name</th><th>Role</th><th>Status</th></tr></thead>
+                                <tbody id="team-table"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- MODULE 5: SETTINGS -->
+            <div id="v-settings" class="view">
+                <div style="display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap;">
+                    
+                    <div class="card" style="flex: 1; min-width: 320px; max-width: 600px;">
+                        <div class="card-header">Hub Configuration</div>
+                        <div class="card-body">
+                            <p style="color: var(--text-muted); margin-bottom: 24px; font-weight: 500;">Set your shop location to enable dynamic distance calculation.</p>
+                            <div class="form-group" style="margin-bottom: 20px;"><label>Shop Latitude</label><input type="text" id="s-lat" class="vib-input" placeholder="e.g. 11.990319"></div>
+                            <div class="form-group" style="margin-bottom: 20px;"><label>Shop Longitude</label><input type="text" id="s-lng" class="vib-input" placeholder="e.g. 75.675524"></div>
+                            <div class="form-group" style="margin-bottom: 24px;"><label>Max Delivery Radius (in km)</label><input type="number" id="s-rad" class="vib-input" placeholder="e.g. 5"></div>
+                            <div class="form-group" style="margin-bottom: 32px; border-top: 1px solid var(--border-color); padding-top: 24px;">
+                                <label style="color: var(--c-blue);"><span class="material-symbols-rounded" style="font-size:16px; vertical-align:middle;">qr_code</span> Upload Store UPI QR Code</label>
+                                <input type="file" accept="image/*" class="vib-input" onchange="handleQRUpload(event)" style="padding: 8px;">
+                                <small style="color: var(--text-muted); display:block; margin-top: 4px;">Riders will show this QR dynamically when UPI is selected.</small>
+                            </div>
+                            <button class="btn btn-blue" onclick="saveSettings()" style="width: 100%;">Save Configuration</button>
+                        </div>
+                    </div>
+
+                    <div class="card" style="flex: 1; min-width: 320px; max-width: 600px; border: 1px solid #FECACA;">
+                        <div class="card-header" style="color: var(--c-red); background: #FEF2F2; border-bottom: 1px solid #FECACA;">Danger Zone</div>
+                        <div class="card-body">
+                            <p style="color: var(--text-muted); margin-bottom: 24px; font-weight: 500;">Permanently wipe all operational order data. This will clear the map and tables, but keep your staff profiles intact.</p>
+                            <button class="btn" style="width: 100%; background: var(--c-red); color: white; box-shadow: 0 8px 20px rgba(220, 38, 38, 0.25);" onclick="factoryReset()">
+                                <span class="material-symbols-rounded">delete_sweep</span> Wipe Database
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- MOBILE BOTTOM NAV (Now 6 Tabs) -->
+    <div class="mobile-nav">
+        <button class="nav-btn active" onclick="switchTab('v-intake', 'New Order', this)"><span class="material-symbols-rounded">add_circle</span><span>Add</span></button>
+        <button class="nav-btn" onclick="switchTab('v-billing', 'Operations', this)"><span class="material-symbols-rounded">task_alt</span><span>Ops</span></button>
+        <button class="nav-btn" onclick="switchTab('v-tracker', 'Live Tracker', this)"><span class="material-symbols-rounded">explore</span><span>Map</span></button>
+        <button class="nav-btn" onclick="switchTab('v-settle', 'Settlement', this)"><span class="material-symbols-rounded">payments</span><span>EOD</span></button>
+        <button class="nav-btn" onclick="switchTab('v-team', 'Team Management', this)"><span class="material-symbols-rounded">group</span><span>Team</span></button>
+        <button class="nav-btn" onclick="switchTab('v-settings', 'Settings', this)"><span class="material-symbols-rounded">settings</span><span>Config</span></button>
+    </div>
+
+    <div id="lightbox" onclick="closeLightbox(event)"><button class="lightbox-close material-symbols-rounded" onclick="document.getElementById('lightbox').style.display='none'">close</button><img id="lightbox-img" src=""></div>
+
+    <!-- UI TOOLKIT: Toast & Confirm -->
+    <div id="toast-container"></div>
+    <div class="modal-overlay" id="confirm-modal">
+        <div class="modal-box" style="text-align: center;">
+            <div id="confirm-icon" class="material-symbols-rounded" style="font-size: 48px; margin-bottom: 16px; color: var(--c-blue);">help</div>
+            <div class="modal-title" id="confirm-title">Confirm Action</div>
+            <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 24px;" id="confirm-msg">Are you sure?</p>
+            <div style="display:flex; gap:12px;">
+                <button class="btn btn-outline" style="flex:1; background:#F1F5F9; border:none; color:var(--text-main);" onclick="closeConfirm()">Cancel</button>
+                <button class="btn btn-blue" id="confirm-btn-yes" style="flex:1;">Yes, Proceed</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="otp-modal">
+        <div class="modal-box">
+            <div class="modal-title">Security Check</div>
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">Enter admin password to view customer OTP.</p>
+            <input type="password" id="admin-pass" class="vib-input" placeholder="Enter Password" style="margin-bottom: 16px;">
+            <div style="display:flex; gap:12px; justify-content:flex-end;">
+                <button class="btn btn-outline" style="background:#F1F5F9; color:var(--text-main);" onclick="document.getElementById('otp-modal').style.display='none'">Cancel</button>
+                <button class="btn btn-blue" onclick="verifyOTPUnlock()">Unlock OTP</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="tx-modal">
+        <div class="modal-box" id="tx-details"></div>
+    </div>
+
+    <script>
+        // --- 1. SUPABASE CLOUD SETUP ---
+        // ⚠️ REPLACE THESE STRINGS WITH YOUR ACTUAL KEYS ⚠️
+        const SUPABASE_URL = 'https://smuzvvmslrpgrgluisxt.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNtdXp2dm1zbHJwZ3JnbHVpc3h0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3OTIwODAsImV4cCI6MjA5MTM2ODA4MH0.TS9aMtc24O8GASSC1XSsufPBq7TVQhhsMnGsh685T4g';
+        
+                let supabaseClient = null;
+        let adminAuthClient = null; // Used ONLY for creating staff so it doesn't log YOU out
+        let currentUser = null;
+
+        if (SUPABASE_URL.startsWith('http')) { 
+            supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); 
+            // Isolated client for staff registration
+            adminAuthClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { storageKey: 'mquick-admin-creator', persistSession: false }});
+        }
+
+        // --- AUTHENTICATION LOGIC ---
+        async function checkAuth() {
+            if(!supabaseClient) return;
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if(session) {
+                currentUser = session.user;
+                document.getElementById('auth-screen').style.display = 'none';
+                
+                // Verify if they are actually an Admin
+                const { data: profile } = await supabaseClient.from('profiles').select('role').eq('id', currentUser.id).single();
+                if(profile && profile.role !== 'ADMIN') {
+                    alert("Unauthorized. Only Admins can access this dashboard.");
+                    logout(); return;
+                }
+                
+                document.getElementById('btn-first-setup').style.display = 'none'; // Hide setup button permanently
+                fetchOrders(); fetchTeam(); setInterval(fetchOrders, 5000);
+            } else {
+                document.getElementById('auth-screen').style.display = 'flex';
+                // Check if any profiles exist. If yes, hide "First Time Setup"
+                const { count } = await supabaseClient.from('profiles').select('*', { count: 'exact', head: true });
+                if(count > 0) document.getElementById('btn-first-setup').style.display = 'none';
+            }
+        }
+
+        async function login() {
+            const email = document.getElementById('auth-email').value.trim();
+            const pass = document.getElementById('auth-pass').value;
+            const { error } = await supabaseClient.auth.signInWithPassword({ email, password: pass });
+            if(error) showToast(error.message, "error"); else checkAuth();
+        }
+
+        function logout() {
+            showConfirm("Sign Out", "Are you sure you want to end your Admin session?", "logout", "red", async () => {
+                await supabaseClient.auth.signOut(); window.location.reload();
+            });
+        }
+
+        async function createFirstAdmin() {
+            const email = document.getElementById('auth-email').value.trim();
+            const pass = document.getElementById('auth-pass').value;
+            if(!email || !pass || pass.length < 6) return alert("Enter an email and a 6+ char password to create Master Admin.");
+            
+            // Register
+            const { data, error } = await supabaseClient.auth.signUp({
+                email: email, password: pass,
+                options: { data: { full_name: 'Master Admin', role: 'ADMIN' } }
+            });
+            
+            if(error) alert(error.message);
+            else { alert("Master Admin created securely! You are now logged in."); checkAuth(); }
+        }
+
+        // --- TEAM MANAGEMENT LOGIC ---
+        async function fetchTeam() {
+            const { data, error } = await supabaseClient.from('profiles').select('*').order('created_at', { ascending: true });
+            if(data) {
+                let html = '';
+                data.forEach(p => {
+                    html += `<tr><td><b style="font-size:13px">${p.full_name}</b></td><td><span class="staff-tag ${p.role}">${p.role}</span></td><td><span style="color:var(--c-green);font-weight:600;font-size:12px;">● Active</span></td></tr>`;
+                });
+                document.getElementById('team-table').innerHTML = html;
+            }
+        }
+
+        async function createStaff() {
+            const name = document.getElementById('s-name').value.trim();
+            const role = document.getElementById('s-role').value;
+            const email = document.getElementById('s-email').value.trim();
+            const pass = document.getElementById('s-pass').value;
+
+            if(!name || !email || pass.length < 6) return alert("All fields required. Password must be 6+ chars.");
+
+            // Use isolated client so Admin isn't logged out
+            const { error } = await adminAuthClient.auth.signUp({
+                email: email, password: pass,
+                options: { data: { full_name: name, role: role } }
+            });
+
+            if(error) alert("Failed to create user: " + error.message);
+            else {
+                alert(`${name} created successfully as ${role}!`);
+                document.getElementById('s-name').value = '';
+                document.getElementById('s-email').value = '';
+                document.getElementById('s-pass').value = '';
+                fetchTeam();
+            }
+        }
+
+        let db = []; 
+        let tempAmounts = {}; 
+        
+        // SAFEGUARD: Parse config and fallback to strict numbers if corrupted
+        let rawConfig = JSON.parse(localStorage.getItem('app_config')) || {};
+        let config = { 
+            lat: parseFloat(rawConfig.lat) || 11.990319432243455, 
+            lng: parseFloat(rawConfig.lng) || 75.67552425581934, 
+            radius: parseFloat(rawConfig.radius) || 5 
+        }; 
+        
+        let map, hubMarker, radiusCircle;
+
+        function toggleSidebar() { 
+            if(window.innerWidth > 900) {
+                document.getElementById('sidebar').classList.toggle('expanded'); 
+                setTimeout(() => { if(map) map.invalidateSize(); }, 300); 
+            }
+        }
+
+        function getYYYYMMDD(timestamp) { const d = new Date(timestamp); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+        function getCurrentTimeInputFormat() { const now = new Date(); return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`; }
+        
+        let activeTrackerDate = getYYYYMMDD(Date.now());
+        document.getElementById('tracker-date').value = activeTrackerDate;
+
+        function changeTrackerDate() { 
+            activeTrackerDate = document.getElementById('tracker-date').value; 
+            renderUI(); 
+            if(document.getElementById('v-tracker').classList.contains('active')) renderMapPins(); 
+        }
+
+        document.getElementById('s-lat').value = config.lat; document.getElementById('s-lng').value = config.lng; document.getElementById('s-rad').value = config.radius;
+        
+        // --- CUSTOM UI TOOLKIT ---
+        function showToast(msg, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const icon = type === 'success' ? 'check_circle' : 'error';
+            const color = type === 'success' ? 'var(--c-green)' : 'var(--c-red)';
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<span class="material-symbols-rounded" style="color:${color}">${icon}</span> ${msg}`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.style.animation = 'toastOut 0.3s forwards'; setTimeout(() => toast.remove(), 300); }, 3000);
+        }
+
+        let confirmCallback = null;
+        function showConfirm(title, msg, icon, color, callback) {
+            document.getElementById('confirm-title').innerText = title;
+            document.getElementById('confirm-msg').innerText = msg;
+            document.getElementById('confirm-icon').innerText = icon;
+            document.getElementById('confirm-icon').style.color = `var(--c-${color})`;
+            document.getElementById('confirm-btn-yes').style.background = `var(--c-${color})`;
+            document.getElementById('confirm-btn-yes').style.boxShadow = `0 8px 20px rgba(0,0,0,0.15)`;
+            confirmCallback = callback;
+            document.getElementById('confirm-modal').style.display = 'flex';
+        }
+        function closeConfirm() { document.getElementById('confirm-modal').style.display = 'none'; confirmCallback = null; }
+        document.getElementById('confirm-btn-yes').addEventListener('click', () => { if(confirmCallback) confirmCallback(); closeConfirm(); });
+
+        function saveSettings() { 
+            const latVal = parseFloat(document.getElementById('s-lat').value);
+            const lngVal = parseFloat(document.getElementById('s-lng').value);
+            const radVal = parseFloat(document.getElementById('s-rad').value);
+            
+            if(isNaN(latVal) || isNaN(lngVal) || isNaN(radVal)) return showToast("Enter valid numeric settings.", "error");
+            
+            config = { lat: latVal, lng: lngVal, radius: radVal }; 
+            localStorage.setItem('app_config', JSON.stringify(config)); 
+            showToast("Settings Saved Successfully!", "success"); 
+            initMap(); 
+        }
+
+        // --- AUTHENTICATION LOGIC ---
+
+        function switchTab(viewId, title, element) {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.querySelectorAll('.nav-btn').forEach(n => n.classList.remove('active'));
+            
+            const allNavs = [...document.querySelectorAll('.nav-item'), ...document.querySelectorAll('.nav-btn')];
+            allNavs.forEach(n => {
+                if(n.getAttribute('onclick').includes(viewId)) n.classList.add('active');
+            });
+
+            document.getElementById(viewId).classList.add('active'); 
+            document.getElementById('top-bar-title').innerText = title;
+            
+            if(viewId === 'v-intake') { document.getElementById('f-time').value = getCurrentTimeInputFormat(); }
+            
+            if(viewId === 'v-tracker' || viewId === 'v-settle') { 
+                document.getElementById('header-date-picker').classList.add('show'); 
+                if(viewId === 'v-tracker') setTimeout(() => { initMap(); renderMapPins(); }, 150); 
+            } else { 
+                document.getElementById('header-date-picker').classList.remove('show'); 
+            }
+            renderUI();
+        }
+
+        function extractCoords(url) {
+            if(!url) return null;
+            let match = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/); if(match) return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+            match = url.match(/(?:query|q)=(-?\d+\.\d+),(-?\d+\.\d+)/); if(match) return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+            match = url.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/); if(match) return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+            return null;
+        }
+        function getDistanceKm(lat1, lon1, lat2, lon2) { const R = 6371; const dLat = (lat2 - lat1) * Math.PI / 180; const dLon = (lon2 - lon1) * Math.PI / 180; const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2); return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); }
+        
+        let tempCoords = null;
+        function validateDistance(url) {
+            const badge = document.getElementById('dist-alert'); if(!url) { badge.className = "dist-badge"; tempCoords = null; return; }
+            const coords = extractCoords(url); if(!coords) { badge.innerHTML = `<span class="material-symbols-rounded" style="font-size:18px">location_off</span> Cannot extract coordinates`; badge.className = "dist-badge dist-warning"; tempCoords = null; return; }
+            tempCoords = coords; const dist = getDistanceKm(config.lat, config.lng, coords.lat, coords.lng).toFixed(1);
+            if(dist <= config.radius) { badge.innerHTML = `<span class="material-symbols-rounded" style="font-size:18px">check_circle</span> Valid Range: ${dist} km`; badge.className = "dist-badge dist-valid"; } else { badge.innerHTML = `<span class="material-symbols-rounded" style="font-size:18px">warning</span> Limit Exceeded: ${dist} km (Max ${config.radius}km)`; badge.className = "dist-badge dist-invalid"; }
+        }
+
+        let activeRiders = [];
+        const greenShades = ['#059669', '#65A30D', '#0D9488', '#16A34A', '#84CC16', '#0F766E', '#15803D'];
+
+        function getRiderColor(riderId) {
+            if(!riderId) return 'var(--c-green)'; // Default green for unassigned
+            let idx = activeRiders.findIndex(r => r.id === riderId);
+            if(idx === -1) return 'var(--c-green)';
+            return greenShades[idx % greenShades.length];
+        }
+
+        async function fetchOrders() {
+            if(!supabaseClient) return;
+            const [ordersRes, ridersRes] = await Promise.all([
+                supabaseClient.from('orders').select('*').order('created_at', { ascending: false }),
+                supabaseClient.from('profiles').select('*').eq('role', 'RIDER')
+            ]);
+            
+            if(ordersRes.error) { console.error(ordersRes.error); return; }
+            db = ordersRes.data;
+            if(ridersRes.data) activeRiders = ridersRes.data;
+
+            renderUI();
+            if(document.getElementById('v-tracker').classList.contains('active')) renderMapPins();
+        }
+
+        async function createOrder() {
+            if(!supabaseClient) return showToast("Database Offline", "error");
+            
+            const name = document.getElementById('f-name').value.trim(); 
+            const phoneVal = document.getElementById('f-phone').value.trim(); 
+            const timeVal = document.getElementById('f-time').value; 
+            const mapLink = document.getElementById('f-map').value.trim();
+
+            if(!name) return showToast("Customer Name is required.", "error");
+            if(!timeVal) return showToast("Order Received Time is required.", "error");
+
+            const cleanPhone = phoneVal.replace(/\D/g, '');
+            if(cleanPhone.length < 10) return showToast("Enter a valid 10-digit WhatsApp number.", "error");
+
+            if(!mapLink || !tempCoords) return showToast("Valid Map Link/Coordinates required.", "error");
+
+            const now = new Date(); const [hours, minutes] = timeVal.split(':'); now.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+
+            const orderObj = { bag_id: Math.random().toString(36).substring(2, 6).toUpperCase(), customer_name: name, phone: phoneVal, alt_phone: document.getElementById('f-alt').value, map_link: mapLink, lat: tempCoords.lat, lng: tempCoords.lng, status: 'DRAFT', otp: Math.floor(1000 + Math.random() * 9000).toString(), created_at: now.toISOString() };
+            
+            const { error } = await supabaseClient.from('orders').insert([orderObj]);
+            if(error) { showToast("Failed to save to Cloud.", "error"); return; }
+            
+            document.querySelectorAll('.vib-input[type="text"]').forEach(i => i.value = '');
+            document.getElementById('f-time').value = getCurrentTimeInputFormat(); document.getElementById('dist-alert').className = "dist-badge"; tempCoords = null;
+            
+            showToast("Order Registered Successfully!", "success");
+            fetchOrders(); switchTab('v-billing', 'Operations', document.querySelectorAll('.nav-item')[1]);
+        }
+
+        function dataURItoBlob(dataURI) { var byteString = atob(dataURI.split(',')[1]); var mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0]; var ab = new ArrayBuffer(byteString.length); var ia = new Uint8Array(ab); for (var i = 0; i < byteString.length; i++) { ia[i] = byteString.charCodeAt(i); } return new Blob([ab], {type: mimeString}); }
+
+        async function handlePhotoUpload(id, event) {
+            if(!supabaseClient) return;
+            const file = event.target.files[0]; if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image(); img.onload = async () => {
+                    const canvas = document.createElement('canvas'); let scale = 800 / img.width; if(scale > 1) scale = 1;
+                    canvas.width = img.width * scale; canvas.height = img.height * scale; canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+                    const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8); const blob = dataURItoBlob(compressedBase64); const fileName = `${id}_${Date.now()}.jpg`;
+                    const { data, error } = await supabaseClient.storage.from('bill_photos').upload(fileName, blob);
+                    if(data) { const { data: urlData } = supabaseClient.storage.from('bill_photos').getPublicUrl(fileName); await supabaseClient.from('orders').update({ photo_url: urlData.publicUrl }).eq('id', id); fetchOrders(); } else { alert("Photo upload failed. Did you create the 'bill_photos' bucket in Supabase?"); }
+                }; img.src = e.target.result;
+            }; reader.readAsDataURL(file);
+        }
+
+        async function removePhoto(id) { if(!supabaseClient) return; await supabaseClient.from('orders').update({ photo_url: null }).eq('id', id); fetchOrders(); }
+
+        async function confirmBilling(id) {
+            if(!supabaseClient) return;
+            const amt = tempAmounts[id] || document.getElementById(`amt-${id}`).value; const order = db.find(o => o.id === id);
+            if(!amt || !order.photo_url) return alert("Amount and Photo required.");
+            await supabaseClient.from('orders').update({ status: 'BILLED', amount: parseFloat(amt) }).eq('id', id);
+            
+            // Generate REAL tracking link
+            const trackUrl = `${window.location.origin}/track.html?id=${id}`;
+            const msg = `Dear ${order.customer_name},\n\nYour order is billed and being packed. \n*Total Amount:* ₹${amt}\n\n*Delivery Handover details:*\n• Delivery Bag ID: *${order.bag_id}*\n• Security OTP: *${order.otp}*\n\nTrack your delivery live here: ${trackUrl}`;
+            
+            window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+            delete tempAmounts[id]; fetchOrders();
+        }
+
+        async function verifyPacking(id) { if(!supabaseClient) return; await supabaseClient.from('orders').update({ status: 'TRANSIT' }).eq('id', id); fetchOrders(); }
+        function factoryReset() { 
+            showConfirm("Wipe Database?", "⚠️ This will permanently delete all orders from the cloud. Proceed?", "delete_sweep", "red", async () => {
+                if(!supabaseClient) return;
+                await supabaseClient.from('orders').delete().neq('id', '00000000-0000-0000-0000-000000000000'); 
+                fetchOrders(); 
+                showToast("Cloud Data Cleared.", "success");
+            });
+        }
+
+        function updateAmountState(id, val) { tempAmounts[id] = val; }
+        function openLightbox(src) { document.getElementById('lightbox-img').src = src; document.getElementById('lightbox').style.display = 'flex'; }
+        function closeLightbox(e) { if(e.target.id === 'lightbox') document.getElementById('lightbox').style.display = 'none'; if(e.target.id === 'tx-modal') document.getElementById('tx-modal').style.display='none';}
+        window.activeRiderFilter = 'ALL';
+        function changeRiderFilter() { window.activeRiderFilter = document.getElementById('rider-filter').value; renderUI(); }
+
+        async function settleEOD() {
+            if(!supabaseClient) return;
+            const filteredDB = db.filter(o => getYYYYMMDD(new Date(o.created_at)) === activeTrackerDate && (o.status === 'DELIVERED' || o.status === 'RETURNED'));
+            let targetDB = filteredDB;
+            if(window.activeRiderFilter && window.activeRiderFilter !== 'ALL') {
+                targetDB = targetDB.filter(o => (o.rider_name || 'Unassigned Rider') === window.activeRiderFilter);
+            }
+            
+            const idsToSettle = targetDB.filter(o => !o.is_settled).map(o => o.id);
+            if(idsToSettle.length === 0) return showToast("All displayed orders are already settled.", "error");
+            
+            showConfirm("Settle Accounts", `Mark ${idsToSettle.length} orders as Settled? This means cash has been handed over.`, "done_all", "green", async () => {
+                const { error } = await supabaseClient.from('orders').update({ is_settled: true }).in('id', idsToSettle);
+                if(error) showToast("Error settling orders.", "error");
+                else { showToast("Accounts Successfully Settled!", "success"); fetchOrders(); }
+            });
+        }
+        let pendingOTPId = null, pendingOTPVal = null;
+        function requestOTPUnlock(id, otp) { pendingOTPId = id; pendingOTPVal = otp; document.getElementById('admin-pass').value = ''; document.getElementById('otp-modal').style.display = 'flex'; }
+        function verifyOTPUnlock() {
+            if(document.getElementById('admin-pass').value === 'Adm765') {
+                document.getElementById(`otp-${pendingOTPId}`).innerText = pendingOTPVal;
+                document.getElementById('otp-modal').style.display = 'none';
+            } else { alert("Incorrect Password"); }
+        }
+
+        function openTxModal(id) {
+            const o = db.find(x => x.id === id); if(!o) return;
+            let splitText = o.payment_method === 'SPLIT' ? `<br>Cash: ₹${o.amount_cash} | UPI: ₹${o.amount_upi}` : '';
+            let html = `
+                <div class="modal-title" style="display:flex; justify-content:space-between;">Bag: ${o.bag_id} <span style="font-size:13px; color:var(--text-muted); font-weight:600;">${o.rider_name || 'N/A'}</span></div>
+                <div style="font-size:14px; margin-bottom:16px;"><b>Customer:</b> ${o.customer_name}<br><b>Phone:</b> ${o.phone}</div>
+                <div style="background:#F8FAFC; padding:16px; border-radius:12px; border:1px solid var(--border-color); margin-bottom:20px;">
+                    <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; font-weight:800;">Financial Breakdown</div>
+                    <div style="font-size:18px; font-weight:800; color:var(--text-main); margin-top:8px;">Total: ₹${o.amount}</div>
+                    <div style="font-size:13px; font-weight:600; color:var(--c-blue); margin-top:4px;">Method: ${o.payment_method} ${splitText}</div>
+                </div>
+                <button class="btn btn-blue" style="width:100%;" onclick="document.getElementById('tx-modal').style.display='none'">Close Receipt</button>
+            `;
+            document.getElementById('tx-details').innerHTML = html;
+            document.getElementById('tx-modal').style.display = 'flex';
+        }
+
+        async function handleQRUpload(event) {
+            if(!supabaseClient) return;
+            const file = event.target.files[0]; if(!file) return;
+            const fileName = `upi_qr_${Date.now()}.jpg`;
+            const { data, error } = await supabaseClient.storage.from('bill_photos').upload(fileName, file);
+            if(data) {
+                const { data: urlData } = supabaseClient.storage.from('bill_photos').getPublicUrl(fileName);
+                await supabaseClient.from('app_settings').upsert({ id: 1, upi_qr_url: urlData.publicUrl });
+                alert("Global QR Code Updated Successfully!");
+            } else { alert("QR upload failed. Check Storage settings."); }
+        }
+
+        // --- MAP LOGIC ---
+        let orderMarkers = [];
+        function initMap() {
+            const mapContainer = document.getElementById('map-container'); if(mapContainer.offsetWidth === 0) return;
+            if(!map) { 
+                map = L.map('map-container', { zoomControl: false }).setView([config.lat, config.lng], 13); 
+                L.control.zoom({ position: 'topleft' }).addTo(map); 
+                L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map); 
+                map.on('zoomend', renderMapPins); 
+            } else { map.invalidateSize(); map.setView([config.lat, config.lng], 13); }
+            
+            if(hubMarker) map.removeLayer(hubMarker); if(radiusCircle) map.removeLayer(radiusCircle);
+            hubMarker = L.marker([config.lat, config.lng], { icon: L.divIcon({ className: '', html: `<div style="background:var(--c-blue); color:white; width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 10px rgba(0,0,0,0.3); border:2px solid white; margin-left:-18px; margin-top:-18px;"><span class="material-symbols-rounded" style="font-size:20px;">storefront</span></div>` }) }).addTo(map);
+            radiusCircle = L.circle([config.lat, config.lng], { color: 'var(--c-blue)', fillColor: 'var(--c-blue)', fillOpacity: 0.05, radius: config.radius * 1000 }).addTo(map);
+            if (radiusCircle.getBounds().isValid()) { map.fitBounds(radiusCircle.getBounds()); }
+        }
+
+        function renderMapPins() {
+            if(!map || document.getElementById('map-container').offsetWidth === 0) return;
+            orderMarkers.forEach(m => map.removeLayer(m)); orderMarkers = [];
+            
+            const currentZoom = map.getZoom();
+            let fontSize = 10 + (currentZoom - 13) * 2; 
+            if (fontSize < 9) fontSize = 9; if (fontSize > 14) fontSize = 14;
+            let displayStyle = currentZoom < 11 ? 'none' : 'block';
+
+            let groups = [];
+            // STRICT FILTER: Only plot orders with real numeric coordinates
+            db.filter(o => getYYYYMMDD(new Date(o.created_at)) === activeTrackerDate && o.lat != null && o.lng != null && !isNaN(o.lat) && !isNaN(o.lng) && o.status !== 'DELIVERED').forEach(o => {
+                let pt = map.latLngToLayerPoint([o.lat, o.lng]); let found = false;
+                for(let g of groups) {
+                    let gPt = map.latLngToLayerPoint([g.lat, g.lng]);
+                    if(Math.abs(gPt.x - pt.x) < 35 && Math.abs(gPt.y - pt.y) < 35) { g.orders.push(o); g.lat = (g.lat + o.lat) / 2; g.lng = (g.lng + o.lng) / 2; found = true; break; }
+                }
+                if(!found) { groups.push({ lat: o.lat, lng: o.lng, orders: [o] }); }
+            });
+
+            let occupiedBoxes = [];
+            let hubPt = map.latLngToLayerPoint([config.lat, config.lng]);
+            occupiedBoxes.push({ left: hubPt.x - 20, right: hubPt.x + 20, top: hubPt.y - 20, bottom: hubPt.y + 20 });
+            groups.forEach(g => { let pt = map.latLngToLayerPoint([g.lat, g.lng]); occupiedBoxes.push({ left: pt.x - 15, right: pt.x + 15, top: pt.y - 15, bottom: pt.y + 15 }); });
+
+            groups.forEach(g => {
+                let isUrgent = false; let popupHTML = '<div style="max-height: 200px; overflow-y: auto; padding-right:8px;">';
+                g.orders.forEach(o => {
+                    const elapsed = Math.floor((Date.now() - new Date(o.created_at).getTime()) / 60000);
+                    if(elapsed >= 40 && !['DELIVERED'].includes(o.status)) isUrgent = true;
+                    popupHTML += `<div style="border-bottom: 1px solid #EBF0F5; padding-bottom: 8px; margin-bottom: 8px;"><span style="font-size:10px; color:#6B7280; text-transform:uppercase;">BAG ID</span><br><b style="font-size:14px; color:#0A59F7;">${o.bag_id}</b><br><span style="font-weight:600">${o.customer_name}</span> • <span style="font-size:11px">${o.status}</span></div>`;
+                });
+                popupHTML += '</div>';
+
+                let pt = map.latLngToLayerPoint([g.lat, g.lng]); let x = pt.x; let y = pt.y;
+                let chars = g.orders.length === 1 ? Math.max(g.orders[0].bag_id.length, g.orders[0].customer_name.split(' ')[0].length) : 8;
+                let labelW = chars * (fontSize * 0.8) + 16; let labelH = fontSize * 2.5 + 8;
+                let positions = [ { name: 'label-bottom', box: { left: x - labelW/2, right: x + labelW/2, top: y + 16, bottom: y + 16 + labelH } }, { name: 'label-top', box: { left: x - labelW/2, right: x + labelW/2, top: y - 16 - labelH, bottom: y - 16 } }, { name: 'label-right', box: { left: x + 16, right: x + 16 + labelW, top: y - labelH/2, bottom: y + labelH/2 } }, { name: 'label-left', box: { left: x - 16 - labelW, right: x - 16, top: y - labelH/2, bottom: y + labelH/2 } } ];
+
+                let bestPos = positions[0];
+                if (displayStyle !== 'none') {
+                    for (let pos of positions) { let hasCollision = false; for (let box of occupiedBoxes) { if (!(pos.box.left > box.right || pos.box.right < box.left || pos.box.top > box.bottom || pos.box.bottom < box.top)) { hasCollision = true; break; } } if (!hasCollision) { bestPos = pos; break; } }
+                    occupiedBoxes.push(bestPos.box);
+                }
+
+                
+                let iconHtml = '';
+                if(g.orders.length === 1) {
+                    const o = g.orders[0];
+                    
+                    // Distinct Color Mapping
+                    let color = 'var(--c-blue)'; // BILLED
+                    if(o.status === 'DRAFT') color = 'var(--c-yellow)';
+                    else if(o.status === 'PACKED') color = 'var(--c-red)';
+                    else if(o.status === 'TRANSIT') color = getRiderColor(o.rider_id);
+
+                    let pinClass = isUrgent ? 'urgent-pulse' : ''; 
+                    let dotColor = isUrgent ? 'var(--c-red)' : color; 
+                    
+                    // Show Sequence inside the dot if in transit
+                    let inner = isUrgent ? '!' : '';
+                    if(o.status === 'TRANSIT' && o.delivery_sequence) inner = o.delivery_sequence;
+
+                    iconHtml = `<div class="map-pin-container"><div class="map-dot ${pinClass}" style="background:${dotColor};">${inner}</div><div class="map-label ${bestPos.name}" style="display:${displayStyle}; font-size:${fontSize}px;"><div class="map-label-bag" style="font-size:${fontSize * 1.1}px; color:${color};">${o.bag_id}</div><div class="map-label-name">${o.customer_name.split(' ')[0]}</div></div></div>`;
+                } else {
+                    let pinClass = isUrgent ? 'urgent-pulse' : ''; let dotColor = isUrgent ? 'var(--c-red)' : 'var(--text-main)';
+                    iconHtml = `<div class="map-pin-container"><div class="map-dot cluster ${pinClass}" style="background:${dotColor}; width:24px; height:24px; font-size:12px; left:-12px; top:-12px;">${g.orders.length}</div><div class="map-label ${bestPos.name}" style="display:${displayStyle}; font-size:${fontSize}px;"><div class="map-label-bag" style="font-size:${fontSize * 1.1}px; color:var(--text-main);">${g.orders.length} Orders</div><div class="map-label-name">Tap to view</div></div></div>`;
+                }
+                let marker = L.marker([g.lat, g.lng], { icon: L.divIcon({ className: '', html: iconHtml, iconSize: [0,0], iconAnchor: [0,0] }) }).addTo(map).bindPopup(popupHTML); orderMarkers.push(marker);
+            });
+
+            // NOW PLOT ACTIVE RIDERS ON THE MAP
+            activeRiders.forEach(r => {
+                if(r.current_lat && r.current_lng) {
+                    let rColor = getRiderColor(r.id);
+                    let rHtml = `<div class="map-pin-container" style="z-index: 1000;"><div style="background:${rColor}; width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:white; border:3px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.3); margin-left:-16px; margin-top:-16px;"><span class="material-symbols-rounded" style="font-size:18px">two_wheeler</span></div><div class="map-label label-bottom" style="font-size:12px; font-weight:800; background:${rColor}; color:white; border:none;">${r.full_name}</div></div>`;
+                    let rMarker = L.marker([r.current_lat, r.current_lng], { icon: L.divIcon({ className: '', html: rHtml, iconSize: [0,0] }) }).addTo(map);
+                    orderMarkers.push(rMarker);
+                }
+            });
+        }
+
+        function toggleMapFullscreen() {
+            const wrapper = document.getElementById('map-wrapper'); const icon = document.getElementById('fs-icon'); wrapper.classList.toggle('fullscreen');
+            if(wrapper.classList.contains('fullscreen')) { icon.innerText = 'fullscreen_exit'; } else { icon.innerText = 'fullscreen'; }
+            setTimeout(() => { if(map){ map.invalidateSize(); map.fitBounds(radiusCircle.getBounds()); renderMapPins(); } }, 300);
+        }
+
+        // --- UI RENDER ENGINE ---
+        function renderUI() {
+            if(document.activeElement && document.activeElement.classList.contains('vib-input')) return;
+
+            const billingQueue = document.getElementById('billing-queue'); let billingHTML = '';
+            const verifyQueue = document.getElementById('verify-queue'); let verifyHTML = '';
+
+            db.forEach(o => {
+                if(o.status === 'DRAFT') {
+                    const currentAmt = tempAmounts[o.id] !== undefined ? tempAmounts[o.id] : (o.amount || '');
+                    const photoUI = o.photo_url ? `<img src="${o.photo_url}" class="doc-preview" onclick="openLightbox('${o.photo_url}')"><button class="btn-remove-doc material-symbols-rounded" onclick="removePhoto('${o.id}')">close</button>` : `<span class="material-symbols-rounded" style="color:var(--c-blue)">add_a_photo</span><input type="file" accept="image/*" onchange="handlePhotoUpload('${o.id}', event)">`;
+                    billingHTML += `<div class="op-row"><div class="op-meta"><div class="bag-id-badge">Bag: ${o.bag_id}</div><div class="op-customer" style="margin-top:4px">${o.customer_name} • ${o.phone}</div></div><div class="op-controls"><div class="form-group" style="width: 130px;"><label style="font-size:11px">Bill Amount</label><input type="number" class="vib-input" style="padding: 10px 16px;" placeholder="₹0.00" value="${currentAmt}" oninput="updateAmountState('${o.id}', this.value)"></div><div class="doc-zone" style="width:80px;height:50px">${photoUI}</div><button class="btn btn-blue" style="padding:10px 20px;" onclick="confirmBilling('${o.id}')">Process</button></div></div>`;
+                }
+                else if(o.status === 'PACKED') {
+                    verifyHTML += `<div class="op-row"><div class="op-meta"><div class="bag-id-badge" style="background:rgba(255,41,41,0.1); color:var(--c-red);">Bag: ${o.bag_id}</div><div class="op-customer" style="margin-top:4px">${o.customer_name} • Total: ₹${o.amount}</div></div><div class="op-controls"><img src="${o.photo_url}" style="width: 60px; height: 50px; border-radius: 8px; object-fit: cover; cursor:pointer;" onclick="openLightbox('${o.photo_url}')"><button class="btn btn-green" style="padding:10px 20px;" onclick="verifyPacking('${o.id}')">Release</button></div></div>`;
+                }
+            });
+
+            billingQueue.innerHTML = billingHTML || '<div style="padding: 24px; color: var(--text-muted); font-weight: 700; text-align: center;">No pending billing.</div>';
+            verifyQueue.innerHTML = verifyHTML || '<div style="padding: 24px; color: var(--text-muted); font-weight: 700; text-align: center;">No verification pending.</div>';
+
+            // Settlement Logic
+            let totalCash = 0, totalUpi = 0, countSuccess = 0, countReturn = 0; let settleHTML = '';
+            const filteredDB = db.filter(o => getYYYYMMDD(new Date(o.created_at)) === activeTrackerDate);
+            let settledDB = filteredDB.filter(o => o.status === 'DELIVERED' || o.status === 'RETURNED').sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+            
+            // Populate Dropdown
+            let uniqueRiders = [...new Set(settledDB.map(o => o.rider_name || 'Unassigned Rider'))];
+            let dropHTML = `<option value="ALL">All Riders</option>`;
+            uniqueRiders.forEach(r => dropHTML += `<option value="${r}" ${window.activeRiderFilter === r ? 'selected' : ''}>${r}</option>`);
+            if(document.getElementById('rider-filter').innerHTML !== dropHTML) document.getElementById('rider-filter').innerHTML = dropHTML;
+
+            // Apply Dropdown Filter
+            if(window.activeRiderFilter && window.activeRiderFilter !== 'ALL') {
+                settledDB = settledDB.filter(o => (o.rider_name || 'Unassigned Rider') === window.activeRiderFilter);
+            }
+
+            let riders = {}; // Group by rider
+            settledDB.forEach(o => {
+                if(o.status === 'DELIVERED') {
+                    countSuccess++;
+                    totalCash += parseFloat(o.amount_cash || 0);
+                    totalUpi += parseFloat(o.amount_upi || 0);
+                } else { countReturn++; }
+
+                let rn = o.rider_name || 'Unassigned Rider';
+                if(!riders[rn]) riders[rn] = { txs: [], cash:0, upi:0, drops:0, allSettled: true };
+                riders[rn].txs.push(o);
+                if(!o.is_settled) riders[rn].allSettled = false;
+                if(o.status === 'DELIVERED') {
+                    riders[rn].cash += parseFloat(o.amount_cash || 0);
+                    riders[rn].upi += parseFloat(o.amount_upi || 0);
+                    riders[rn].drops++;
+                }
+            });
+
+            for (const [rider, data] of Object.entries(riders)) {
+                let rBadge = data.allSettled ? `<span style="background:#E6F8F0; color:var(--c-green); padding:2px 8px; border-radius:4px; font-size:10px; font-weight:800; margin-left:8px;">SETTLED</span>` : '';
+                settleHTML += `<div style="background:#F8FAFC; padding:8px 16px; font-weight:800; font-size:13px; color:var(--text-main); display:flex; justify-content:space-between; border-bottom:1px solid var(--border-color); align-items:center;"><div>${rider} ${rBadge}</div> <span style="color:var(--c-blue)">Cash to Collect: ₹${data.cash}</span></div>`;
+                data.txs.forEach(o => {
+                    let statusColor = o.status === 'DELIVERED' ? 'var(--c-green)' : 'var(--c-red)';
+                    let methodUI = o.status === 'DELIVERED' ? `<div class="s-method">${o.payment_method || 'UNKNOWN'}</div>` : `<div class="s-method" style="color:var(--c-red); background:#FEF2F2">Reason: ${o.return_reason || 'N/A'}</div>`;
+                    let sBadge = o.is_settled ? `<span style="color:var(--c-green); font-size:16px;" class="material-symbols-rounded">task_alt</span>` : '';
+                    
+                    // NEW: Calculate explicit Cash/UPI split for the list view
+                    let cAmt = parseFloat(o.amount_cash || 0);
+                    let uAmt = parseFloat(o.amount_upi || 0);
+                    let priceRight = o.status === 'DELIVERED' ? 
+                        `<div style="text-align:right;">
+                            <div style="font-weight:800; font-size:15px; color:var(--text-main);">₹${o.amount || '0'}</div>
+                            <div style="font-size:11px; font-weight:700; color:var(--text-muted); margin-top:6px;">CASH: <span style="color:var(--text-main)">₹${cAmt}</span> <span style="margin:0 4px;color:#CBD5E1">|</span> UPI: <span style="color:var(--text-main)">₹${uAmt}</span></div>
+                        </div>` : 
+                        `<div style="font-weight:800; font-size:15px; text-align:right; color:var(--c-red);">Failed</div>`;
+
+                    settleHTML += `<div class="s-list-item"><div style="display:flex; flex-direction:column; gap:4px;"><div style="font-weight:600; color:var(--text-main); font-size:14px; display:flex; align-items:center; gap:6px;">Bag: ${o.bag_id} ${sBadge} <span style="font-weight:400; color:var(--text-muted); font-size:12px"> • ${o.customer_name}</span></div><div style="font-size:12px; font-weight:500; color:${statusColor}">${o.status}</div>${methodUI}</div>${priceRight}</div>`;
+                });
+            }
+
+            document.getElementById('s-cash').innerText = `₹${totalCash}`; document.getElementById('s-upi').innerText = `₹${totalUpi}`; document.getElementById('s-success').innerText = countSuccess; document.getElementById('s-return').innerText = countReturn;
+            document.getElementById('settle-list').innerHTML = settleHTML || `<div style="padding:32px; text-align:center; color:var(--text-muted);">No completed routes found.</div>`;
+
+            // Tracker Logic
+            let cDraft=0, cBilled=0, cPacked=0, cTransit=0, cDelivered=0;
+            const trackerBody = document.getElementById('tracker-table'); let trackerHTML = '';
+            
+            filteredDB.sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).forEach(o => {
+                if(o.status === 'DRAFT') cDraft++; else if(o.status === 'BILLED') cBilled++; else if(o.status === 'PACKED') cPacked++; else if(o.status === 'TRANSIT') cTransit++; else if(o.status === 'DELIVERED') cDelivered++;
+                const elapsed = Math.floor((Date.now() - new Date(o.created_at).getTime()) / 60000);
+                const isUrgent = elapsed >= 50 && !['DELIVERED'].includes(o.status);
+                
+                // Add Sequence Badge if in Transit
+                let seqBadge = (o.status === 'TRANSIT' && o.delivery_sequence) ? `<span style="background:${getRiderColor(o.rider_id)}; color:white; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:800; margin-left:6px;" title="Delivery Sequence">#${o.delivery_sequence}</span>` : '';
+
+                trackerHTML += `<tr><td><div style="font-weight:800; font-size:13px; display:flex; align-items:center;">${o.bag_id} ${seqBadge}</div></td><td><div style="font-size:12px; font-weight:700">${o.customer_name}</div><div style="color:var(--text-muted); font-size:11px;">${o.phone}</div></td><td><div style="font-size:12px; font-weight:700">₹${o.amount||'0'}</div></td><td><span class="otp-text" id="otp-${o.id}" style="cursor:pointer;" onclick="requestOTPUnlock('${o.id}', '${o.otp}')" title="Tap to unlock">••••</span></td><td><span class="tag tag-${o.status.toLowerCase()}">${o.status}</span></td><td><span class="${isUrgent ? 'time-critical' : ''}">${isUrgent ? '<span class="material-symbols-rounded" style="font-size:16px">warning</span>' : ''}${elapsed} mins</span></td></tr>`;
+            });
+
+            document.getElementById('m-draft').innerText = cDraft; document.getElementById('m-billed').innerText = cBilled; document.getElementById('m-packed').innerText = cPacked; document.getElementById('m-transit').innerText = cTransit; document.getElementById('m-delivered').innerText = cDelivered;
+            trackerBody.innerHTML = trackerHTML || `<tr><td colspan="6" style="text-align:center; padding: 32px; color:var(--text-muted); font-weight:600;">No orders found for this date.</td></tr>`;
+        }
+
+        if(supabaseClient) { checkAuth(); } 
+        else { console.warn("Supabase Offline."); }
+    </script>
+</body>
+</html>

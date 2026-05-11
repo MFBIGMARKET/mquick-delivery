@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Track My Order | MQuick</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,600,1,0" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <!-- PWA Setup -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0A59F7">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').catch(err => console.log('SW setup failed: ', err));
+            });
+        }
+    </script>
+
+    <style>
+        :root {
+            --bg: #F5F7FA;
+            --surface: #FFFFFF;
+            --text-main: #121826;
+            --text-muted: #6B7280;
+            --c-blue: #0A59F7;
+            --c-green: #00D166;
+            --c-red: #DC2626;
+            --border: #EBF0F5;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { background: var(--bg); color: var(--text-main); display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+
+        /* Desktop Constraint */
+        .app-container { background: var(--surface); width: 100%; max-width: 480px; border-radius: 32px; box-shadow: 0 20px 60px rgba(10, 20, 35, 0.08); overflow: hidden; position: relative; min-height: 80vh; display: flex; flex-direction: column; }
+        
+        .header { background: #121826; color: white; padding: 32px 24px; text-align: center; border-radius: 0 0 32px 32px; }
+        .bag-badge { display: inline-block; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); padding: 6px 16px; border-radius: 99px; font-weight: 700; font-size: 13px; letter-spacing: 1px; margin-bottom: 16px; }
+        .eta-title { font-size: 14px; font-weight: 600; color: #9CA3AF; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+        .eta-time { font-size: 42px; font-weight: 800; line-height: 1; margin-bottom: 8px; }
+        .status-text { font-size: 16px; font-weight: 500; color: #D1D5DB; }
+
+        .content { padding: 32px 24px; flex: 1; display: flex; flex-direction: column; }
+
+        /* Stepper UI */
+        .stepper { display: flex; align-items: center; justify-content: space-between; margin-bottom: 40px; position: relative; }
+        
+        /* The lines between dots */
+        .track-line { position: absolute; top: 12px; height: 4px; background: var(--border); z-index: 1; border-radius: 4px; }
+        .track-fill { position: absolute; top: 12px; height: 4px; background: var(--c-green); z-index: 2; border-radius: 4px; transition: width 1s ease-in-out; width: 0%; }
+        
+        /* Segments - Making the last one long */
+        .seg-1 { left: 12px; width: 20%; }
+        .seg-2 { left: calc(20% + 12px); width: 20%; }
+        .seg-3 { left: calc(40% + 12px); right: 12px; } /* The long transit stretch */
+
+        .step { display: flex; flex-direction: column; align-items: center; z-index: 3; position: relative; width: 24px; }
+        .step-dot { width: 24px; height: 24px; border-radius: 50%; background: var(--surface); border: 4px solid var(--border); transition: 0.3s; }
+        .step-label { position: absolute; top: 32px; font-size: 11px; font-weight: 700; color: var(--text-muted); white-space: nowrap; text-align: center; }
+        
+        /* Step States */
+        .step.done .step-dot { background: var(--c-green); border-color: var(--c-green); }
+        .step.active .step-dot { border-color: var(--c-green); background: white; animation: pulse 1.5s infinite; }
+        .step.active .step-label { color: var(--text-main); }
+        
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(0, 209, 102, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(0, 209, 102, 0); } 100% { box-shadow: 0 0 0 0 rgba(0, 209, 102, 0); } }
+
+        /* Stepper Positions */
+        .step:nth-child(4) { position: absolute; left: 0; }
+        .step:nth-child(5) { position: absolute; left: 20%; }
+        .step:nth-child(6) { position: absolute; left: 40%; }
+        .step:nth-child(7) { position: absolute; right: 0; }
+
+        /* Security OTP Box */
+        .otp-card { background: #F0F4FF; border: 1px dashed #A5C0F9; border-radius: 20px; padding: 24px; text-align: center; margin-top: auto; }
+        .otp-title { font-size: 13px; font-weight: 700; color: var(--c-blue); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+        .otp-code { font-size: 36px; font-weight: 800; letter-spacing: 16px; margin-right: -16px; color: var(--text-main); font-family: monospace; }
+        .otp-desc { font-size: 12px; color: var(--text-muted); font-weight: 500; margin-top: 8px; }
+
+        /* Loading Screen */
+        .loading-screen { position: absolute; inset: 0; background: var(--surface); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
+        .spinner { animation: rotate 1s linear infinite; font-size: 40px; color: var(--c-blue); margin-bottom: 16px; }
+        @keyframes rotate { 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        
+        <!-- Loader -->
+        <div class="loading-screen" id="loader">
+            <span class="material-symbols-rounded spinner">refresh</span>
+            <div style="font-weight: 700; color: var(--text-muted);">Locating your order...</div>
+        </div>
+
+        <!-- Header -->
+        <div class="header">
+            <div class="bag-badge" id="ui-bag">BAG #----</div>
+            <div class="eta-title">Expected Arrival</div>
+            <div class="eta-time" id="ui-eta">--:--</div>
+            <div class="status-text" id="ui-status">Processing Order...</div>
+        </div>
+
+        <!-- Content -->
+        <div class="content">
+            
+            <div class="stepper">
+                <!-- Grey Background Tracks -->
+                <div class="track-line seg-1"></div>
+                <div class="track-line seg-2"></div>
+                <div class="track-line seg-3"></div>
+
+                <!-- Green Fill Tracks -->
+                <div class="track-fill seg-1" id="fill-1"></div>
+                <div class="track-fill seg-2" id="fill-2"></div>
+                <div class="track-fill seg-3" id="fill-3"></div>
+
+                <!-- Step Nodes -->
+                <div class="step" id="step-1"><div class="step-dot"></div><div class="step-label">Billed</div></div>
+                <div class="step" id="step-2"><div class="step-dot"></div><div class="step-label">Packed</div></div>
+                <div class="step" id="step-3"><div class="step-dot"></div><div class="step-label">Picked Up</div></div>
+                <div class="step" id="step-4"><div class="step-dot"></div><div class="step-label">Delivered</div></div>
+            </div>
+
+            <!-- OTP Card -->
+            <div class="otp-card">
+                <div class="otp-title"><span class="material-symbols-rounded" style="font-size: 16px; vertical-align: middle; margin-right: 4px;">lock</span> Security PIN</div>
+                <div class="otp-code" id="ui-otp">----</div>
+                <div class="otp-desc">Share this PIN with the rider to receive your bag.</div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // ⚠️ REPLACE WITH YOUR ACTUAL KEYS ⚠️
+        const SUPABASE_URL = 'https://smuzvvmslrpgrgluisxt.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNtdXp2dm1zbHJwZ3JnbHVpc3h0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3OTIwODAsImV4cCI6MjA5MTM2ODA4MH0.TS9aMtc24O8GASSC1XSsufPBq7TVQhhsMnGsh685T4g';
+        
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const urlParams = new URLSearchParams(window.location.search);
+        const orderId = urlParams.get('id');
+
+        // Formats Date to "04:30 PM"
+        function formatTime(dateObj) {
+            return dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function updateUI(order) {
+            document.getElementById('loader').style.display = 'none';
+            
+            document.getElementById('ui-bag').innerText = `BAG #${order.bag_id}`;
+            document.getElementById('ui-otp').innerText = order.otp;
+
+            // Calculate Expected ETA (45 minutes from creation)
+            const createdTime = new Date(order.created_at).getTime();
+            const etaTime = new Date(createdTime + (45 * 60000));
+            document.getElementById('ui-eta').innerText = formatTime(etaTime);
+
+            // Reset Steps & Fills
+            for(let i=1; i<=4; i++) document.getElementById(`step-${i}`).className = 'step';
+            document.getElementById('fill-1').style.width = '0%';
+            document.getElementById('fill-2').style.width = '0%';
+            document.getElementById('fill-3').style.width = '0%';
+
+            const statusText = document.getElementById('ui-status');
+
+            if(order.status === 'RETURNED') {
+                statusText.innerText = "Delivery Failed";
+                statusText.style.color = "var(--c-red)";
+                document.getElementById('ui-eta').innerText = "Failed";
+                return;
+            }
+
+            if(order.status === 'DRAFT' || order.status === 'BILLED') {
+                statusText.innerText = "Billed & Preparing...";
+                document.getElementById('step-1').className = 'step active';
+            } 
+            else if (order.status === 'PACKED') {
+                statusText.innerText = "Packed & Waiting for Rider";
+                document.getElementById('step-1').className = 'step done';
+                document.getElementById('step-2').className = 'step active';
+                document.getElementById('fill-1').style.width = '100%';
+            } 
+            else if (order.status === 'TRANSIT') {
+                statusText.innerText = order.delivery_sequence === 1 ? "Rider is heading to you next!" : `Stop #${order.delivery_sequence} on Route`;
+                document.getElementById('step-1').className = 'step done';
+                document.getElementById('step-2').className = 'step done';
+                document.getElementById('step-3').className = 'step active';
+                document.getElementById('fill-1').style.width = '100%';
+                document.getElementById('fill-2').style.width = '100%';
+
+                // Calculate progress along the long final transit line
+                // Assume transit happens between minute 15 and minute 45
+                const elapsedSinceTransitStart = Date.now() - (createdTime + (15 * 60000));
+                const totalTransitWindow = 30 * 60000;
+                let percent = (elapsedSinceTransitStart / totalTransitWindow) * 100;
+                
+                // Clamp between 10% (just picked up) and 90% (almost there, waiting for OTP)
+                if(percent < 10) percent = 10;
+                if(percent > 90) percent = 90;
+                
+                document.getElementById('fill-3').style.width = `${percent}%`;
+            } 
+            else if (order.status === 'DELIVERED') {
+                statusText.innerText = "Successfully Delivered!";
+                statusText.style.color = "var(--c-green)";
+                document.querySelector('.header').style.background = "#00D166";
+                document.getElementById('ui-eta').innerText = "Delivered";
+                
+                document.getElementById('step-1').className = 'step done';
+                document.getElementById('step-2').className = 'step done';
+                document.getElementById('step-3').className = 'step done';
+                document.getElementById('step-4').className = 'step done';
+                document.getElementById('fill-1').style.width = '100%';
+                document.getElementById('fill-2').style.width = '100%';
+                document.getElementById('fill-3').style.width = '100%';
+            }
+        }
+
+        async function fetchOrderData() {
+            if(!orderId) return alert("Invalid Tracking Link");
+            // Securely fetch data using the RPC function instead of querying the table directly!
+            const { data, error } = await supabaseClient.rpc('get_order_tracking', { tracking_id: orderId });
+            if(error || !data) return alert("Order not found or tracking expired.");
+            updateUI(data);
+        }
+
+        fetchOrderData();
+        setInterval(fetchOrderData, 5000); // Live refresh every 5 seconds
+    </script>
+</body>
+</html>
